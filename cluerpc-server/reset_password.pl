@@ -4,11 +4,14 @@ use feature "switch";
 "reset_password" => sub {
 	my ($state, $req) = @_;
 
+	my @services = qw(mysql samba);
+
 	unless ($state->{authed}) {
 		return {failure,
 			msg => "access denied"};
 	}
-	unless ($req->{service}) {
+
+	unless (defined $req->{service}) {
 		return {failure,
 			msg => "missing parameter"};
 	}
@@ -20,6 +23,10 @@ use feature "switch";
 		}
 		when ("samba") {
 			return $state->spawn_helper("rd-smbpasswd");
+		}
+		when ("") {
+			return {success,
+				services => \@services};
 		}
 		default {
 			return {failure,
