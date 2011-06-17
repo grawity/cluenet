@@ -18,7 +18,7 @@ my $debug;
 my $host;
 my $port;
 my $rpc;
-my $user;
+our $user;
 my $verbose;
 my $yes;
 
