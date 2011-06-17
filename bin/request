@@ -9,6 +9,10 @@ use Cluenet::Rpc::Client;
 use Data::Dumper;
 use Getopt::Long qw(:config bundling no_ignore_case);
 
+use constant {
+	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-client/*.pl",
+};
+
 my $rpc;
 
 sub confirm {
@@ -16,8 +20,6 @@ sub confirm {
 	print "$text [yn] ";
 	exit unless <STDIN> =~ /^y/i;
 }
-
-# Protocol commands
 
 sub authenticate	{ $rpc->authenticate(@_); }
 sub request		{ $rpc->request(@_); }
@@ -52,93 +54,37 @@ $rpc->{verbose} = $verbose;
 $rpc->{debug} = $debug;
 if ($debug) { $ENV{DEBUG} = "1"; }
 
-#$rpc->connect_spawn;
 $rpc->connect_socket(getfqdn, 10875);
 
+my %commands;
+
+for my $file (glob(COMMAND_DIR)) {
+	my ($name, $command) = do $file;
+	if ($@) {
+		warn "Loading $file failed: $@\n";
+	}
+	$commands{$name} = $command;
+}
+
 my $r;
-my $cmd = shift(@ARGV) // "help";
+my $name = shift(@ARGV) // "help";
 
-given ($cmd) {
+given ($name) {
 	when ("help") {
-		say for (
-			"Usage:",
-			"",
-			"request access [-]SERVICE",
-			"\trequest access to a service (samba, ftp)",
-			"",
-			"request mysql",
-			"\tcreate a MySQL account or reset an existing account's password",
-			"",
-			"request reset-password SERVICE",
-			"\treset password for a service (mysql, samba)",
-			"",
-		);
-	}
-	when ("access") {
-		my $service = shift(@ARGV);
-
-		my $do_revoke = ($service =~ s/^-//);
-
-		check $r = authenticate("GSSAPI");
-		check $r = request(cmd => "grant_access",
-					server => getfqdn(),
-					service => $service,
-					revoke => $do_revoke);
-
-		given ($r->{action}) {
-			when ("grant") {
-				say "Access granted to ".join(", ", @{$r->{services}});
+		say "Usage:";
+		say "";
+		for my $name (sort keys %commands) {
+			my $cmd = $commands{$name};
+			if (defined $cmd->{usage}) {
+				say "request $cmd->{usage}";
+			} else {
+				next;
 			}
-			when ("revoke") {
-				say "Access revoked to ".join(", ", @{$r->{services}});
+
+			if (defined $cmd->{description}) {
+				say "\t$cmd->{description}";
 			}
-			when ("request-sent") {
-				say "Request forwarded to administrators.";
-			}
-		}
-	}
-	when ("mysql") {
-		my $user = $ENV{USER};
 
-		confirm "Create MySQL account '\033[1m${user}\033[m'?";
-
-		check $r = authenticate;
-		check $r = request(cmd => "mysql_account");
-
-		say "MySQL account updated.";
-		say "";
-		say "Username:\t".$r->{account}{username};
-		say "Password:\t".$r->{account}{password};
-		say "Databases:\t".$r->{account}{db_glob};
-		say "";
-		if ($r->{admin_url}) {
-			say "You can change the password and create databases at:";
-			say $r->{admin_url};
-			say "";
-		}
-	}
-	when ("reset-password") {
-		my @services = qw(samba mysql);
-
-		my $service = shift(@ARGV);
-		if (!$service) {
-			die "Service not specified\n";
-		}
-		unless ($service ~~ @services) {
-			die "Unsupported service '$service'.\n";
-		}
-
-		confirm "Reset $service password for '\033[1m${user}\033[m'?";
-
-		check $r = authenticate;
-		check $r = request(cmd => "reset_password", service => $service);
-
-		say "Password for '$r->{account}{username}' has been reset.";
-		say "";
-		say "New password:\t".$r->{account}{password};
-		say "";
-		if ($r->{msg}) {
-			say $r->{msg};
 			say "";
 		}
 	}
@@ -150,6 +96,9 @@ given ($cmd) {
 			$r = request(%args);
 			print Dumper($r);
 		}
+	}
+	when (defined $commands{$name}) {
+		$commands{$name}{command}->($name, $rpc);
 	}
 	default {
 		die "Unknown command.\n";
