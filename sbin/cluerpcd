@@ -18,7 +18,7 @@ use Sys::Syslog qw(:standard :macros);
 use constant {
 	SASL_SERVICE	=> "host",
 	KRB5_KEYTAB	=> "/home/grawity/cluenet/etc/cluerpc.keytab",
-	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc/*.pl",
+	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc",
 	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc",
 };
 
@@ -157,14 +157,31 @@ $commands{auth} = sub {
 	}
 };
 
-$commands{getstate} = sub {
-	my ($state, $req) = @_;
-	return {status => "ok",
-		state => Dumper($state)};
-};
-
 sub get_command {
-	$commands{shift()};
+	my $cmd = shift;
+	if ($cmd =~ /^\w+$/) {
+		return $commands{$cmd} //= load_command($cmd);
+	} else {
+		return undef;
+	}
+}
+
+sub load_command {
+	my $cmd = shift;
+	my $file = COMMAND_DIR."/".$cmd.".pl";
+	if (-f $file) {
+		my ($name, $sub) = do $file;
+		if ($@) {
+			syslog(LOG_ERR, "sourcing $file failed: $@");
+		}
+		if ($name and $sub) {
+			$commands{$name} = $sub;
+			return $sub;
+		}
+	} else {
+		syslog(LOG_NOTICE, "file not found: $file");
+		return undef;
+	}
 }
 
 sub handle_request {
@@ -188,29 +205,11 @@ sub handle_request {
 
 ## main loop
 
-if (defined KRB5_KEYTAB) {
-	$ENV{KRB5_KTNAME} = KRB5_KEYTAB;
-}
-
 openlog("cluerpcd", "pid", LOG_DAEMON);
 setlogmask(LOG_UPTO(LOG_NOTICE));
 
-$commands{"list_commands"} = sub {
-	my ($state, $req) = @_;
-	return {success,
-		commands => [grep {$_ ne "auth"} keys %commands]};
-};
-
-# To do: only load commands on first request
-for my $file (glob(COMMAND_DIR)) {
-	syslog(LOG_DEBUG, "sourcing $file");
-	my ($name, $sub) = do $file;
-	if ($@) {
-		syslog(LOG_ERR, "sourcing $file failed: $@");
-	} 
-	if ($name and $sub) {
-		$commands{$name} = $sub;
-	}
+if (defined KRB5_KEYTAB) {
+	$ENV{KRB5_KTNAME} = KRB5_KEYTAB;
 }
 
 $state = Cluenet::Rpc::Server->new;
