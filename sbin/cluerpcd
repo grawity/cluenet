@@ -125,7 +125,6 @@ $commands{auth} = sub {
 				# ugly hack to pass $state (really $state->{sasl}) to callbacks
 				callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks}
 				)->server_new(SASL_SERVICE, getfqdn);
-			$state->{want_seal} = $req->{seal};
 			$challenge = $state->{sasl}->server_start(grep {length} $response);
 		}
 		else {
@@ -144,11 +143,11 @@ $commands{auth} = sub {
 	}
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
+		$state->{seal_next} = 1;
 		syslog(LOG_INFO, "authenticated %s as %s", $state->{authzid}, $state->{user});
 		return {success,
 			user => $state->{user},
-			authzid => $state->{authzid},
-			seal => $state->{want_seal}++};
+			authzid => $state->{authzid}};
 	}
 	else {
 		$state->{eof} = 1;
@@ -221,7 +220,7 @@ while (my $req = $state->rpc_recv) {
 	$reply = handle_request($state, $req);
 	$state->rpc_send($reply);
 
-	if (($state->{want_seal} // 0) == 2) {
+	if ($state->{seal_next}) {
 		$state->{seal} = 1;
 	}
 	if ($state->{eof}) {

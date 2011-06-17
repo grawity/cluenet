@@ -51,16 +51,15 @@ sub request {
 }
 
 sub authenticate {
-	my ($self, %args) = @_;
-	$args{mech} //= "GSSAPI";
-	$args{seal} //= 1;
+	my ($self, $mech) = @_;
+	$mech //= "GSSAPI";
 
-	my $reply = $self->sasl_step($args{mech}, %args);
+	my $reply = $self->sasl_step($mech);
 	until (defined $reply->{status}) {
 		$reply = $self->sasl_step(b64_decode($reply->{data}));
 	}
 	if ($reply->{status}) {
-		$self->{seal} = $reply->{seal} // 0;
+		$self->{seal} = 1;
 		if ($self->{verbose}) {
 			say "\033[32mAuthenticated as $reply->{user} (authorized for $reply->{authzid})\033[m";
 		}
@@ -72,18 +71,18 @@ sub sasl_step {
 	my $self = shift;
 	my $req;
 	if (!defined $self->{sasl}) {
-		my ($mech, %args) = @_;
+		my $mech = shift;
 		$self->{sasl} = Authen::SASL->new(
 					mech => $mech,
 					callback => $self->{callbacks},
 				)->client_new(SASL_SERVICE, $self->{host});
 
-		$req = {cmd => "auth", %args};
+		$req = {cmd => "auth"};
 		$req->{mech} = $self->{sasl}->mechanism;
 		$req->{data} = b64_encode($self->{sasl}->client_start);
 	}
 	else {
-		my ($data) = @_;
+		my $data = shift;
 		$req = {cmd => "auth"};
 		$req->{data} = b64_encode($self->{sasl}->client_step($data));
 	}
