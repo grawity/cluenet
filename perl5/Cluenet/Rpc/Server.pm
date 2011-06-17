@@ -26,6 +26,8 @@ sub new {
 		user	=> "anonymous",
 		authzid	=> "anonymous",
 	};
+	binmode $self->{infd}, ":raw";
+	binmode $self->{outfd}, ":raw";
 	bless $self, shift;
 }
 
