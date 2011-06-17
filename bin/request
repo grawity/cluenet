@@ -13,12 +13,21 @@ use constant {
 	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-client/*.pl",
 };
 
+my %commands;
+my $debug;
+my $host;
+my $port;
 my $rpc;
+my $user;
+my $verbose;
+my $yes;
 
 sub confirm {
-	my $text = shift;
-	print "$text [yn] ";
-	exit unless <STDIN> =~ /^y/i;
+	unless ($yes) {
+		my $text = shift;
+		print "$text [yn] ";
+		exit unless <STDIN> =~ /^y/i;
+	}
 }
 
 sub authenticate	{ $rpc->authenticate(@_); }
@@ -35,28 +44,7 @@ sub check {
 	}
 }
 
-my $user = $ENV{USER};
-my $debug = 0;
-my $verbose = 0;
-
-GetOptions(
-	"D|debug!" => \$debug,
-	"z|authz=s" => \$user,
-	"v|verbose!" => \$verbose,
-);
-
-$rpc = Cluenet::Rpc::Client->new;
-$rpc->{callbacks} = {
-	# authorization id
-	user => \$user,
-};
-$rpc->{verbose} = $verbose;
-$rpc->{debug} = $debug;
-if ($debug) { $ENV{DEBUG} = "1"; }
-
-$rpc->connect_socket(getfqdn, 10875);
-
-my %commands;
+# load available commands
 
 for my $file (glob(COMMAND_DIR)) {
 	my ($name, $command) = do $file;
@@ -66,7 +54,32 @@ for my $file (glob(COMMAND_DIR)) {
 	$commands{$name} = $command;
 }
 
-my $r;
+$user = $ENV{USER};
+$host = getfqdn;
+$port = 10875;
+$debug = $ENV{DEBUG} || 0;
+
+GetOptions(
+	"D|debug!"	=> \$debug,
+	"h|host=s"	=> \$host,
+	"v|verbose!"	=> \$verbose,
+	"y|yes!"	=> \$yes,
+	"z|authz=s"	=> \$user,
+);
+
+# connect to RPC server
+
+$rpc = Cluenet::Rpc::Client->new;
+$rpc->{callbacks} = {
+	user => \$user,
+};
+$rpc->{verbose} = $verbose;
+$rpc->{debug} = $debug;
+
+$rpc->connect_socket($host, $port);
+
+# run requests
+
 my $name = shift(@ARGV) // "help";
 
 given ($name) {
@@ -89,8 +102,8 @@ given ($name) {
 		}
 	}
 	when ("raw") {
+		my $r;
 		check $r = authenticate;
-		say "Enter Perl hash:";
 		while (<STDIN>) {
 			my %args = eval $_;
 			$r = request(%args);
@@ -98,6 +111,7 @@ given ($name) {
 		}
 	}
 	when (defined $commands{$name}) {
+		my $r;
 		$commands{$name}{command}->($name, $rpc);
 	}
 	default {

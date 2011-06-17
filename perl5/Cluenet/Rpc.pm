@@ -27,7 +27,7 @@ sub rpc_decode { decode_json(shift || '{}'); }
 sub rpc_send {
 	my $state = shift;
 	my $data = rpc_encode(shift);
-	$ENV{DEBUG} and warn "SEND: $data\n";
+	$state->{debug} and warn "SEND: $data\n";
 	if ($state->{seal}) {
 		$data = $state->{sasl}->encode($data);
 	}
@@ -55,7 +55,7 @@ sub rpc_recv {
 	if ($state->{seal}) {
 		$buf = $state->{sasl}->decode($buf);
 	}
-	$ENV{DEBUG} and warn "RECV: $buf\n";
+	$state->{debug} and warn "RECV: $buf\n";
 	return rpc_decode($buf);
 }
 

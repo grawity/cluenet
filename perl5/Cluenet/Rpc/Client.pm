@@ -37,7 +37,7 @@ sub connect_socket {
 			PeerAddr => $addr,
 			PeerPort => $port,
 			Proto => "tcp")
-			or die "socket ($addr, $port) failed: $!";
+			or die "connect($addr, $port) failed: $!\n";
 	$sock->autoflush(0);
 	$self->{infd} = $sock;
 	$self->{outfd} = $sock;
