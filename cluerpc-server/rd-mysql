@@ -8,7 +8,7 @@ use Sys::Syslog qw(:standard :macros);
 
 use constant {
 	MYSQL_USER	=> "root",
-	MYSQL_PW_FILE	=> "/home/grawity/cluenet/cluerpc/creds/mysql-root",
+	MYSQL_PW_FILE	=> "/home/grawity/cluenet/cluerpc-server/creds/mysql-root",
 	PHPMYADMIN_URL	=> "https://equal.cluenet.org/phpmyadmin/",
 };
 

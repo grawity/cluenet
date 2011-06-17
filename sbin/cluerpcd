@@ -18,8 +18,8 @@ use Sys::Syslog qw(:standard :macros);
 use constant {
 	SASL_SERVICE	=> "host",
 	KRB5_KEYTAB	=> "/home/grawity/cluenet/etc/cluerpc.keytab",
-	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc",
-	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc",
+	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-server",
+	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc-server",
 };
 
 my $state = {};
