@@ -1,8 +1,5 @@
 #!/usr/bin/env perl
-## HACK ##
-BEGIN { push @INC, "/home/grawity/cluenet/perl5"; }
-## HACK ##
-
+use v5.10; # Damn right.
 use warnings;
 use strict;
 use feature "switch";
@@ -21,6 +18,7 @@ use Sys::Syslog qw(:standard :macros);
 use constant {
 	SASL_SERVICE	=> "host",
 	KRB5_KEYTAB	=> "/home/grawity/cluenet/etc/cluerpc.keytab",
+	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc/*.pl",
 	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc",
 };
 
@@ -165,66 +163,33 @@ $commands{getstate} = sub {
 		state => Dumper($state)};
 };
 
-$commands{mysql_account} = sub {
+sub add_command {
+	my ($cmd, $sub) = @_;
+	$commands{$cmd} = $sub;
+}
+
+sub get_command {
+	$commands{shift};
+}
+
+sub handle_request {
 	my ($state, $req) = @_;
-
-	unless ($state->{authed}) {
-		return {failure,
-			msg => "access denied"};
+	if (!defined $req->{cmd}) {
+		return {failure, msg => "missing command"};
 	}
 
-	$req->{user} = $state->{authzid};
-	$req->{ifexists} = 0;
-	return $state->spawn_helper("rd-mysql", $req);
-};
-
-$commands{grant_access} = sub {
-	my ($state, $req) = @_;
-
-	unless ($state->{authed}) {
-		return {failure,
-			msg => "access denied"};
+	my $sub = get_command($req->{cmd});
+	if (!defined $sub) {
+		return {failure, msg => "invalid command"};
 	}
-	unless ($req->{server} and $req->{service}) {
-		return {failure,
-			msg => "missing parameter"};
+	
+	my $reply = eval {$cmd->($state, $req)};
+	if ($@) {
+		return {failure, msg => "$@"};
+	} else {
+		return $reply;
 	}
-	unless ($req->{server} eq getfqdn()) {
-		return {failure,
-			msg => "wrong server"};
-	}
-
-	$req->{action} = $req->{revoke} ? "revoke" : "grant";
-	$req->{user} = $state->{authzid};
-	return $state->spawn_helper("rd-access", $req);
-};
-
-$commands{reset_password} = sub {
-	my ($state, $req) = @_;
-
-	unless ($state->{authed}) {
-		return {failure,
-			msg => "access denied"};
-	}
-	unless ($req->{service}) {
-		return {failure,
-			msg => "missing parameter"};
-	}
-
-	given ($req->{service}) {
-		when ("mysql") {
-			my $data = {user => $state->{authzid}, ifexists => 1};
-			return $state->spawn_helper("rd-mysql", $data);
-		}
-		when ("samba") {
-			return $state->spawn_helper("rd-smbpasswd");
-		}
-		default {
-			return {failure,
-				msg => "unknown service"};
-		}
-	}
-};
+}
 
 ## main loop
 
@@ -232,29 +197,33 @@ if (defined KRB5_KEYTAB) {
 	$ENV{KRB5_KTNAME} = KRB5_KEYTAB;
 }
 
-openlog("cluerpcd", "pid", LOG_AUTHPRIV);
+openlog("cluerpcd", "pid", LOG_DAEMON);
 setlogmask(LOG_UPTO(LOG_NOTICE));
+
+add_command "list_commands" => sub {
+	my ($state, $req) = @_;
+	return {success,
+		commands => [grep {$_ ne "auth"} keys %commands]};
+};
+
+# To do: only load commands on first request
+for my $file (glob(COMMAND_DIR)) {
+	syslog(LOG_DEBUG, "sourcing $file");
+	my ($name, $sub) = do $file;
+	if ($@) {
+		syslog(LOG_ERR, "sourcing $file failed: $@");
+	} 
+	if ($name and $sub) {
+		add_command($name, $sub);
+	}
+}
 
 $state = Cluenet::Rpc::Server->new;
 $state->{rpchelperdir} = HELPER_DIR;
 
-my ($req, $reply);
+my ($req, $reply, $sub);
 while (my $req = $state->rpc_recv) {
-	#warn "\033[35mSERVER IN:\033[m ", Dumper($req);
-	if (!defined $req->{cmd}) {
-		$reply = {failure, msg => "missing command"};
-	}
-	elsif (!defined $commands{$req->{cmd}}) {
-		$reply = {failure, msg => "invalid command"};
-	}
-	else {
-		syslog(LOG_DEBUG, "request '%s' by %s", $req->{cmd}, $state->{authzid});
-		$reply = $commands{$req->{cmd}}->($state, $req);
-		if ($@) {
-			$reply = {failure, msg => "$@"};
-		}
-	}
-	#warn "\033[36mSERVER OUT:\033[m ", Dumper($reply);
+	$reply = handle_request($state, $req);
 	$state->rpc_send($reply);
 
 	if (($state->{want_seal} // 0) == 2) {

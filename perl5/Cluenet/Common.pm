@@ -8,14 +8,17 @@ use Authen::Krb5;
 use Carp;
 use IO::Handle;
 use Sys::Hostname;
+use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use User::pwent;
 
 our @EXPORT = qw(
+	canon_host
+	getfqdn
+	is_cluenet_user
+	is_valid_user
 	pwgen
 	read_line
-	getfqdn
-	is_valid_user
-	is_cluenet_user
+	server_fqdn
 	);
 
 sub read_line {

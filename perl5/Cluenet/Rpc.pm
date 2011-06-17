@@ -45,6 +45,10 @@ sub rpc_recv {
 		return {failure, msg => "connection closed"};
 	}
 	$len = unpack("N", $buf);
+	if ($len > 65535) {
+		warn $buf.$state->{infd}->getline."\n";
+		return {failure, msg => "invalid data"};
+	}
 	unless ($state->{infd}->read($buf, $len) == $len) {
 		return {failure, msg => "connection closed"};
 	}
@@ -57,8 +61,5 @@ sub rpc_recv {
 
 sub sasl_encode { encode_base64(shift // "", "") }
 sub sasl_decode { decode_base64(shift // "") }
-
-##
-
 
 1;

@@ -34,9 +34,11 @@ sub check {
 }
 
 my $user = $ENV{USER};
+my $debug = 0;
 my $verbose = 0;
 
 GetOptions(
+	"D|debug!" => \$debug,
 	"z|authz=s" => \$user,
 	"v|verbose!" => \$verbose,
 );
@@ -47,6 +49,8 @@ $rpc->{callbacks} = {
 	user => \$user,
 };
 $rpc->{verbose} = $verbose;
+$rpc->{debug} = $debug;
+if ($debug) { $ENV{DEBUG} = "1"; }
 
 #$rpc->connect_spawn;
 $rpc->connect_socket(getfqdn, 10875);

@@ -4,16 +4,17 @@ use strict;
 use feature "switch";
 use constant LDAP_HOST => "ldap.cluenet.org";
 
+use Authen::SASL;
+use Cluenet::Common;
+use Cluenet::LDAP;
+use Data::Dumper;
 use Getopt::Long;
-use Socket;
 use Net::DNS;
 use Net::IP;
-use Authen::SASL;
-use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
-use Data::Dumper;
+use Socket;
 use Text::Format;
 
 my $ldap;
@@ -25,14 +26,6 @@ my %commands;
 use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
 
 ### String and hostname manipulation
-
-# Canonicalize a hostname
-sub canon_host {
-	my ($host) = @_;
-	my %hint = (flags => Socket::GetAddrInfo->AI_CANONNAME);
-	my ($err, @ai) = getaddrinfo($host, "", \%hint);
-	return $err ? $host : ((shift @ai)->{canonname} // $host);
-}
 
 sub lookup_host {
 	my ($host) = @_;
@@ -67,49 +60,17 @@ sub format_address {
 	}
 }
 
-
-# FQDNize a given host
-sub fqdn {
-	my ($host) = @_;
-	return ($host =~ /\./) ? $host : "$host.cluenet.org";
-}
-
 # Split "host/service" arg
 sub to_hostservice {
 	my ($host, $service, $rest) = split /\//, shift, 3;
-	return (fqdn($host), $service, $rest);
+	return (server_fqdn($host), $service, $rest);
 }
 sub to_hostservice_safe {
 	my ($host, $service, $rest) = split /\//, shift, 3;
 	unless ($host and $service) {
 		die "syntax error: empty host or service: '$host/$service'\n";
 	}
-	return (fqdn($host), $service, $rest);
-}
-
-#
-sub user_dn {"uid=".shift().",ou=people,dc=cluenet,dc=org"}
-sub server_dn {"cn=".fqdn(shift).",ou=servers,dc=cluenet,dc=org"}
-
-# Find the next rightmost RDN after given base
-sub from_dn {
-	my ($entrydn, $branchdn, $nonames) = @_;
-	my %opts = (reverse => 1, casefold => "lower");
-	my @entry = @{ldap_explode_dn($entrydn, %opts)};
-	my @base = @{ldap_explode_dn($branchdn, %opts)};
-	for my $rdn (@base) {
-		my @brdn = %$rdn;
-		my @erdn = %{shift @entry};
-		return if ($erdn[0] ne $brdn[0]) or ($erdn[1] ne $brdn[1]);
-	}
-	my @final = %{shift @entry};
-	return $nonames ? $final[1] : @final;
-}
-sub user_from_dn {
-	from_dn(shift, "ou=people,dc=cluenet,dc=org", 1);
-}
-sub server_from_dn {
-	from_dn(shift, "ou=servers,dc=cluenet,dc=org", 1);
+	return (server_fqdn($host), $service, $rest);
 }
 
 sub str_bool {
@@ -130,22 +91,8 @@ sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
 
 ### LDAP connection
 
-# Establish LDAP connection, authenticated or anonymous
-sub connect_auth {
-	my $sasl = Authen::SASL->new("GSSAPI");
-	my $ldap = Net::LDAP->new(LDAP_HOST) or die "$!";
-	#$ldap->start_tls(verify => "require",
-	#	cafile => "$ENV{HOME}/lib/ca/cluenet.pem") or die "$@";
-	my $authen = $sasl->client_new("ldap", canon_host LDAP_HOST);
-	my $msg = $ldap->bind(sasl => $authen);
-	$msg->code and die "error: ".$sasl->error;
-	return $ldap;
-}
-sub connect_anon {
-	my $ldap = Net::LDAP->new(LDAP_HOST) or die "$!";
-	$ldap->bind;
-	return $ldap;
-}
+sub connect_auth { Cluenet::LDAP::connect_auth; }
+sub connect_anon { Cluenet::LDAP::connect_anon; }
 
 # Get and cache LDAP authzid
 sub whoami {
@@ -568,7 +515,7 @@ $commands{"server:create"} = sub {
 	%entry = (
 		objectClass => ["server", "ipHost",
 			"authorizedServiceObject", "serviceRequirementObject"],
-		cn => fqdn($host),
+		cn => server_fqdn($host),
 		owner => user_dn($owner),
 		isOfficial => "FALSE",
 		userAccessible => "TRUE",
@@ -614,7 +561,7 @@ $commands{"server:delete"} = sub {
 	$ldap = connect_auth;
 	for (@_) {
 		my ($host, $dn, $res, @children, $subdn, $num);
-		$host = fqdn($_);
+		$host = server_fqdn($_);
 		$dn = server_dn($host);
 		print "Deleting server: $host\n";
 
