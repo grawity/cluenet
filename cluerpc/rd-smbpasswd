@@ -1,0 +1,47 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use Cluenet::Common;
+use Cluenet::LDAP;
+use Cluenet::Rpc::Server;
+use IO::Handle;
+
+sub reset_password {
+	my $user = shift;
+	my $pw = pwgen();
+
+	open my $fd, "|-", ("sudo", "smbpasswd", "-L", "-s", "-a", $user)
+		or return {failure,
+			msg => "internal error: could not run smbpasswd"};
+
+	$fd->print($pw."\n".$pw."\n");
+	$fd->close;
+
+	if ($? > 0) {
+		return {failure,
+			msg => "internal error: smbpasswd failed"};
+	}
+	else {
+		return {success,
+			account => {
+				username => $user,
+				password => $pw},
+			msg => "Use 'smbpasswd' to change your password."};
+	}
+}
+
+rpc_helper_main {
+	my ($req, $authz) = @_;
+
+	if (!$authz) {
+		return {failure,
+			msg => "access denied"};
+	}
+
+	if (!is_valid_user($authz)) {
+		return {failure,
+			msg => "no such Samba account"};
+	}
+
+	return reset_password($authz);
+};

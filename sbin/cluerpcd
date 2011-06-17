@@ -1,0 +1,266 @@
+#!/usr/bin/env perl
+## HACK ##
+BEGIN { push @INC, "/home/grawity/cluenet/perl5"; }
+## HACK ##
+
+use warnings;
+use strict;
+use feature "switch";
+use Authen::Krb5::Simple;
+use Authen::SASL;
+use Cluenet::Common;
+use Cluenet::Kerberos;
+use Cluenet::Rpc::Server;
+use Data::Dumper;
+use IO::Handle;
+use IPC::Open2;
+use JSON;
+use MIME::Base64;
+use Sys::Syslog qw(:standard :macros);
+
+use constant {
+	SASL_SERVICE	=> "host",
+	KRB5_KEYTAB	=> "/home/grawity/cluenet/etc/cluerpc.keytab",
+	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc",
+};
+
+my $state = {};
+my %commands;
+
+# SASL authentication
+
+sub authorize {
+	my ($state, $authzid, $user) = @_;
+	syslog(LOG_DEBUG, "authorize called: authz=$authzid user=$user");
+	given ($state->{sasl}->mechanism) {
+		when ("GSSAPI") {
+			return krb5_kuserok($authzid, $user);
+		}
+		default {
+			return krb5_canonuser($authzid) eq $user;
+		}
+	}
+}
+
+sub checkpass {
+	my ($state, $user, $pass) = @_;
+	syslog(LOG_DEBUG, "checkpass called: user=$user");
+	my $krb = Authen::Krb5::Simple->new;
+	return $krb->authenticate($user, $pass);
+}
+
+my %callbacks = (
+	user => sub {
+		die "user callback: ".Dumper(\@_);
+	},
+
+	checkpass => sub {
+		my ($state, $user, $pass) = @_;
+		if (checkpass($state, $user, $pass)) {
+			$state->{user} = $user;
+			return 1;
+		} else {
+			return 0;
+		}
+	},
+
+	authorize => sub {
+		my ($state, $authzid, $user) = @_;
+		if (authorize($state, $authzid, $user)) {
+			$state->{user} = $user;
+			$state->{authzid} = $authzid;
+			return 1;
+		} else {
+			return 0;
+		}
+	},
+
+	password => sub {
+		warn "getsecret ".Dumper([@_]);
+	},
+
+	canonuser => sub {
+		my ($state, $type, $_a, $flags, $user) = @_;
+		given ($type) {
+			when ("AUTHID") {
+				return krb5_canonuser($user);
+			}
+			default {
+				return $user;
+			}
+		}
+	},
+);
+
+## RPC commands
+
+$commands{auth} = sub {
+	my ($state, $req) = @_;
+	my ($auth, $response, $challenge);
+
+	if ($state->{authed}) {
+		return {failure,
+			msg => "already authenticated"};
+	}
+
+	$response = decode_base64($req->{data} // "");
+
+	if (defined $state->{sasl}) {
+		if (defined $req->{mech}) {
+			return {failure,
+				msg => "cannot change mechanism during authentication"};
+		}
+		else {
+			$challenge = $state->{sasl}->server_step($response);
+		}
+	}
+	else {
+		if (defined $req->{mech}) {
+			unless (uc $req->{mech} ~~ ["GSSAPI"]) {
+				return {failure,
+					msg => "unsupported mechanism"};
+			}
+			$state->{saslsteps} = 0;
+			$state->{sasl} = Authen::SASL->new(
+				mechanism => $req->{mech},
+				# ugly hack to pass $state (really $state->{sasl}) to callbacks
+				callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks}
+				)->server_new(SASL_SERVICE, getfqdn);
+			$state->{want_seal} = $req->{seal};
+			$challenge = $state->{sasl}->server_start(grep {length} $response);
+		}
+		else {
+			return {failure,
+				msg => "missing mechanism"};
+		}
+	}
+
+	if (++$state->{saslsteps} >= 50) {
+		syslog(LOG_ERR, "infinite SASL loop");
+		return {failure,
+			msg => "internal error"};
+	}
+	elsif ($state->{sasl}->need_step) {
+		return {data => encode_base64($challenge // "", "")};
+	}
+	elsif ($state->{sasl}->code == 0) {
+		$state->{authed} = 1;
+		syslog(LOG_INFO, "authenticated %s as %s", $state->{authzid}, $state->{user});
+		return {success,
+			user => $state->{user},
+			authzid => $state->{authzid},
+			seal => $state->{want_seal}++};
+	}
+	else {
+		$state->{eof} = 1;
+		return {failure,
+			error => [$state->{sasl}->error],
+			msg => "authentication failed"};
+	}
+};
+
+$commands{getstate} = sub {
+	my ($state, $req) = @_;
+	return {status => "ok",
+		state => Dumper($state)};
+};
+
+$commands{mysql_account} = sub {
+	my ($state, $req) = @_;
+
+	unless ($state->{authed}) {
+		return {failure,
+			msg => "access denied"};
+	}
+
+	$req->{user} = $state->{authzid};
+	$req->{ifexists} = 0;
+	return $state->spawn_helper("rd-mysql", $req);
+};
+
+$commands{grant_access} = sub {
+	my ($state, $req) = @_;
+
+	unless ($state->{authed}) {
+		return {failure,
+			msg => "access denied"};
+	}
+	unless ($req->{server} and $req->{service}) {
+		return {failure,
+			msg => "missing parameter"};
+	}
+	unless ($req->{server} eq getfqdn()) {
+		return {failure,
+			msg => "wrong server"};
+	}
+
+	$req->{action} = $req->{revoke} ? "revoke" : "grant";
+	$req->{user} = $state->{authzid};
+	return $state->spawn_helper("rd-access", $req);
+};
+
+$commands{reset_password} = sub {
+	my ($state, $req) = @_;
+
+	unless ($state->{authed}) {
+		return {failure,
+			msg => "access denied"};
+	}
+	unless ($req->{service}) {
+		return {failure,
+			msg => "missing parameter"};
+	}
+
+	given ($req->{service}) {
+		when ("mysql") {
+			my $data = {user => $state->{authzid}, ifexists => 1};
+			return $state->spawn_helper("rd-mysql", $data);
+		}
+		when ("samba") {
+			return $state->spawn_helper("rd-smbpasswd");
+		}
+		default {
+			return {failure,
+				msg => "unknown service"};
+		}
+	}
+};
+
+## main loop
+
+if (defined KRB5_KEYTAB) {
+	$ENV{KRB5_KTNAME} = KRB5_KEYTAB;
+}
+
+openlog("cluerpcd", "pid", LOG_AUTHPRIV);
+setlogmask(LOG_UPTO(LOG_NOTICE));
+
+$state = Cluenet::Rpc::Server->new;
+$state->{rpchelperdir} = HELPER_DIR;
+
+my ($req, $reply);
+while (my $req = $state->rpc_recv) {
+	#warn "\033[35mSERVER IN:\033[m ", Dumper($req);
+	if (!defined $req->{cmd}) {
+		$reply = {failure, msg => "missing command"};
+	}
+	elsif (!defined $commands{$req->{cmd}}) {
+		$reply = {failure, msg => "invalid command"};
+	}
+	else {
+		syslog(LOG_DEBUG, "request '%s' by %s", $req->{cmd}, $state->{authzid});
+		$reply = $commands{$req->{cmd}}->($state, $req);
+		if ($@) {
+			$reply = {failure, msg => "$@"};
+		}
+	}
+	#warn "\033[36mSERVER OUT:\033[m ", Dumper($reply);
+	$state->rpc_send($reply);
+
+	if (($state->{want_seal} // 0) == 2) {
+		$state->{seal} = 1;
+	}
+	if ($state->{eof}) {
+		exit;
+	}
+}

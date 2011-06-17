@@ -1,0 +1,12 @@
+# vim: ft=xinetd
+service cluerpc
+{
+	disable		= yes
+	flags		= IPv6
+	type		= UNLISTED
+	socket_type	= stream
+	port		= 10875
+	wait		= no
+	user		= cluerpc
+	server		= /home/grawity/cluenet/sbin/cluerpcd
+}

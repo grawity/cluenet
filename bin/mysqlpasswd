@@ -1,0 +1,45 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use feature "say";
+use DBI;
+#use Getopt::Long qw(:config bundling no_ignore_case);
+use Term::ReadPassword;
+
+use constant {
+	MIN_LENGTH	=> 2,
+};
+
+sub getpass { read_password(shift, 0, 1) // exit; }
+
+sub handle_err { say $DBI::errstr; exit 1; }
+
+sub Main {
+	my ($dbh, $user, $oldpw, $newpw, $confirm);
+
+	$user = shift(@ARGV) // getlogin();
+	$oldpw = getpass("Old MySQL password: ");
+
+	$dbh = DBI->connect("DBI:mysql:host=localhost", $user, $oldpw,
+		{HandleError => \&handle_err});
+
+	$newpw = getpass("New MySQL password: ");
+	$confirm = getpass("Reenter new password: ");
+
+	if ($newpw ne $confirm) {
+		say "Password mismatch.";
+		exit 1;
+	}
+	if (length($newpw) < MIN_LENGTH) {
+		say "Password too short.";
+		exit 1;
+	}
+	my $sth = $dbh->prepare("SET PASSWORD = PASSWORD(?)");
+	if ($sth->execute($newpw)) {
+		say "Password for '$user' changed.";
+	} else {
+		handle_err;
+	}
+}
+
+Main;

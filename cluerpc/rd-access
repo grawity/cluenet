@@ -1,0 +1,110 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use feature "say";
+use feature "switch";
+use Authen::Krb5;
+use Cluenet::Common;
+use Cluenet::Kerberos;
+use Cluenet::LDAP;
+use Cluenet::Rpc;
+use File::Temp qw(tempfile);
+
+use constant {
+	KEYTAB_FILE		=> "krb5.keytab",
+	REQUEST_RECIPIENT	=> 'grawity',
+};
+
+sub modify_acl {
+	my ($server, $service, $user, $action) = @_;
+
+	my $ldap = Cluenet::LDAP::connect_auth;
+	my $group = "cn=$service,cn=svcAccess,".server_dn($server);
+
+	my $is_member = 0;
+	my $res = $ldap->search(base => $group, scope => "base",
+		filter => q(objectClass=*), attrs => ["member"]);
+	$res->is_error and return {failure, msg => $res->error};
+	for my $entry ($res->entries) {
+		$is_member += grep {user_from_dn($_) eq $user} $entry->get_value("member");
+	}
+
+	my %changes;
+	given ($action) {
+		when ("grant") {
+			return {failure,
+				msg => "user $user already has access"}
+				if $is_member;
+			$changes{add} = {member => [user_dn($user)]};
+		}
+		when ("revoke") {
+			return {success,
+				action => $action,
+				services => [$service]}
+				if !$is_member;
+			$changes{delete} = {member => [user_dn($user)]};
+		}
+	}
+	$res = $ldap->modify($group, %changes);
+	$res->is_error and return {failure, msg => $res->error};
+
+	return {success,
+		action => $action,
+		services => [$service]};
+}
+
+sub forward_request {
+	my ($req, $authz, $authn) = @_;
+
+	my @message = (
+		"To: ".REQUEST_RECIPIENT,
+		"Subject: User '$authz' requested access to $req->{server}/$req->{service}",
+		"",
+		"Request information:",
+		"\tuser    = $authz",
+		"\tserver  = $req->{server}",
+		"\tservice = $req->{service}",
+		"\tauthnid = $authn",
+	);
+
+	open my $fh, "|-", "/usr/sbin/sendmail", "-i", REQUEST_RECIPIENT;
+	say $fh $_ for @message;
+	close $fh;
+
+	return {success,
+		action => "request-sent"};
+}
+
+
+my $ccache = kinit_as_service("host", keytab => KEYTAB_FILE);
+$ENV{KRB5CCNAME} = $ccache->get_name;
+
+Cluenet::Rpc::helper_main {
+	my ($req, $authz, $authn) = @_;
+
+	my @required = qw(user server service action);
+
+	if (grep {!defined} @{$req}{@required}) {
+		return {failure, msg => "missing parameter"};
+	}
+
+	unless (defined $authz and $authz eq $req->{user}) {
+		return {failure, msg => "access denied"};
+	}
+
+	unless ($req->{action} ~~ ["grant", "revoke"]) {
+		return {failure, msg => "invalid action"};
+	}
+
+	given ($req->{service}) {
+		when (["samba", "ftp", "xmpp"]) {
+			return modify_acl($req->{server}, $req->{service},
+				$req->{user}, $req->{action});
+		}
+		default {
+			return forward_request($req, $authz, $authn);
+		}
+	}
+};
+
+$ccache->destroy;

@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use Cluenet::Common;
+use Cluenet::Rpc::Server;
+use DBI;
+use Sys::Syslog qw(:standard :macros);
+
+use constant {
+	MYSQL_USER	=> "root",
+	MYSQL_PW_FILE	=> "/home/grawity/cluenet/cluerpc/creds/mysql-root",
+	PHPMYADMIN_URL	=> "https://equal.cluenet.org/phpmyadmin/",
+};
+
+sub update_account {
+	my $user = shift;
+	my $ifexists = shift // 0;
+
+	my $reply = eval {
+		my $rootpw = read_line(MYSQL_PW_FILE);
+		my $db = DBI->connect("DBI:mysql:host=localhost", MYSQL_USER, $rootpw,
+			{PrintError => 0, RaiseError => 1});
+
+		my $userhost = "localhost";
+		my $userpw = pwgen();
+		my $dbmask = "${user}\\_%";
+
+		my $userid;
+		my $grant;
+
+		if ($ifexists) {
+			$grant = "USAGE ON *.*";
+
+			my $users = $db->selectall_arrayref("SELECT User, Host
+							FROM mysql.user
+							WHERE User = '$user'
+							AND Host = '$userhost'");
+			if (!@$users) {
+				return {failure,
+					msg => "no such MySQL account"};
+			}
+
+		}
+		else {
+			$grant = "ALL on `$dbmask`.*";
+		}
+
+		$userid = "'${user}'\@'${userhost}'";
+		$db->do("GRANT $grant TO $userid IDENTIFIED BY '$userpw'");
+		return {success,
+			account => {
+				username => $user,
+				hostmask => $userhost,
+				password => $userpw,
+				dbmask => $dbmask},
+			admin_url => PHPMYADMIN_URL};
+	};
+
+	if ($@) {
+		return {failure,
+			error => "$@",
+			msg => "MySQL connection failed"};
+	} else {
+		return $reply;
+	}
+}
+
+rpc_helper_main {
+	my ($req, $authz) = @_;
+
+	unless (defined $req->{user}) {
+		return {failure, msg => "missing user parameter"};
+	}
+
+	unless (defined $authz and $authz eq $req->{user}) {
+		return {failure, msg => "access denied"};
+	}
+
+	return update_account($req->{user}, $req->{ifexists});
+}
