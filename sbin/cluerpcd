@@ -163,13 +163,8 @@ $commands{getstate} = sub {
 		state => Dumper($state)};
 };
 
-sub add_command {
-	my ($cmd, $sub) = @_;
-	$commands{$cmd} = $sub;
-}
-
 sub get_command {
-	$commands{shift};
+	$commands{shift()};
 }
 
 sub handle_request {
@@ -183,7 +178,7 @@ sub handle_request {
 		return {failure, msg => "invalid command"};
 	}
 	
-	my $reply = eval {$cmd->($state, $req)};
+	my $reply = eval {$sub->($state, $req)};
 	if ($@) {
 		return {failure, msg => "$@"};
 	} else {
@@ -200,7 +195,7 @@ if (defined KRB5_KEYTAB) {
 openlog("cluerpcd", "pid", LOG_DAEMON);
 setlogmask(LOG_UPTO(LOG_NOTICE));
 
-add_command "list_commands" => sub {
+$commands{"list_commands"} = sub {
 	my ($state, $req) = @_;
 	return {success,
 		commands => [grep {$_ ne "auth"} keys %commands]};
@@ -214,7 +209,7 @@ for my $file (glob(COMMAND_DIR)) {
 		syslog(LOG_ERR, "sourcing $file failed: $@");
 	} 
 	if ($name and $sub) {
-		add_command($name, $sub);
+		$commands{$name} = $sub;
 	}
 }
 
