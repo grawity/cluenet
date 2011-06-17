@@ -10,8 +10,8 @@ use JSON;
 use MIME::Base64;
 
 our @EXPORT = qw(
-	sasl_encode
-	sasl_decode
+	b64_encode
+	b64_decode
 	failure
 	success
 	rpc_encode
@@ -23,6 +23,9 @@ sub success { status => 1 }
 
 sub rpc_encode { encode_json(shift // {}); }
 sub rpc_decode { decode_json(shift || '{}'); }
+
+sub b64_encode { MIME::Base64::encode_base64(shift // "", "") }
+sub b64_decode { MIME::Base64::decode_base64(shift // "") }
 
 sub rpc_send {
 	my $state = shift;
@@ -58,8 +61,5 @@ sub rpc_recv {
 	$state->{debug} and warn "RECV: $buf\n";
 	return rpc_decode($buf);
 }
-
-sub sasl_encode { encode_base64(shift // "", "") }
-sub sasl_decode { decode_base64(shift // "") }
 
 1;

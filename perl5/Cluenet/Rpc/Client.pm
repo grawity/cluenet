@@ -57,7 +57,7 @@ sub authenticate {
 
 	my $reply = $self->sasl_step($args{mech}, %args);
 	until (defined $reply->{status}) {
-		$reply = $self->sasl_step(sasl_decode($reply->{data}));
+		$reply = $self->sasl_step(b64_decode($reply->{data}));
 	}
 	if ($reply->{status}) {
 		$self->{seal} = $reply->{seal} // 0;
@@ -80,12 +80,12 @@ sub sasl_step {
 
 		$req = {cmd => "auth", %args};
 		$req->{mech} = $self->{sasl}->mechanism;
-		$req->{data} = sasl_encode($self->{sasl}->client_start);
+		$req->{data} = b64_encode($self->{sasl}->client_start);
 	}
 	else {
 		my ($data) = @_;
 		$req = {cmd => "auth"};
-		$req->{data} = sasl_encode($self->{sasl}->client_step($data));
+		$req->{data} = b64_encode($self->{sasl}->client_step($data));
 	}
 
 	if ($self->{sasl}->code < 0) {

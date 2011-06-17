@@ -7,6 +7,7 @@ use Authen::Krb5::Simple;
 use Authen::SASL;
 use Cluenet::Common;
 use Cluenet::Kerberos;
+use Cluenet::Rpc;
 use Cluenet::Rpc::Server;
 use Data::Dumper;
 use IO::Handle;
@@ -101,7 +102,7 @@ $commands{auth} = sub {
 			msg => "already authenticated"};
 	}
 
-	$response = decode_base64($req->{data} // "");
+	$response = b64_decode($req->{data});
 
 	if (defined $state->{sasl}) {
 		if (defined $req->{mech}) {
@@ -139,7 +140,7 @@ $commands{auth} = sub {
 			msg => "internal error"};
 	}
 	elsif ($state->{sasl}->need_step) {
-		return {data => encode_base64($challenge // "", "")};
+		return {data => b64_encode($challenge)};
 	}
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
