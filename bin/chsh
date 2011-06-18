@@ -1,0 +1,36 @@
+#!/usr/bin/env perl
+use English;
+use Getopt::Long qw(:config no_ignore_case);
+use User::pwent;
+
+sub chsh {
+	my $shell = shift;
+	my @cmd = ();
+	if ($UID >= 25000) {
+		@cmd = ("/cluenet/bin/cn", "user:chsh");
+	}
+	else {
+		@cmd = ("/usr/bin/chsh.real");
+	}
+	exec(@cmd, "-s", $shell) or die "$!";
+}
+
+my $shell;
+
+GetOptions(
+	"s|shell=s" => \$shell
+	);
+
+if ($shell) {
+	chsh($shell);
+}
+else {
+	my $pw = getpwuid($UID);
+	print "Your current shell is ".$pw->shell."\n";
+	print "Enter the new value, or press ENTER for the default\n";
+	printf "%19s [%s]: ", "Login Shell", $pw->shell;
+	chomp(my $input = <STDIN>);
+	if ($input) {
+		chsh($input);
+	}
+}
