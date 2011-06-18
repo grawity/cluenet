@@ -7,6 +7,9 @@ use feature "say";
 	description =>
 	"reset password for given service",
 
+	requires =>
+	["reset_password"],
+
 	command =>
 	sub {
 		### TODO ### get services from remote

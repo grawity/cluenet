@@ -7,6 +7,9 @@ use feature "say";
 	description =>
 	"create a MySQL account",
 
+	requires =>
+	["grant_mysql"],
+
 	command =>
 	sub {
 		my $user = $ENV{USER};
@@ -14,7 +17,7 @@ use feature "say";
 		confirm "Create MySQL account '\033[1m${user}\033[m'?";
 
 		check $r = authenticate;
-		check $r = request(cmd => "mysql_account");
+		check $r = request(cmd => "grant_mysql");
 
 		say "MySQL account updated.";
 		say "";

@@ -76,18 +76,24 @@ $rpc->{callbacks} = {
 $rpc->{verbose} = $verbose;
 $rpc->{debug} = $debug;
 
-$rpc->connect_socket($host, $port);
+$rpc->connect($host, $port);
 
 # run requests
 
 my $name = shift(@ARGV) // "help";
+my $r;
 
 given ($name) {
 	when ("help") {
+		check $r = request(cmd => "list");
 		say "Usage:";
 		say "";
 		for my $name (sort keys %commands) {
 			my $cmd = $commands{$name};
+			if (grep {!($_ ~~ @{$r->{commands}})} @{$cmd->{requires}}) {
+				next;
+			}
+
 			if (defined $cmd->{usage}) {
 				say "request $cmd->{usage}";
 			} else {
@@ -102,7 +108,6 @@ given ($name) {
 		}
 	}
 	when ("raw") {
-		my $r;
 		check $r = authenticate;
 		while (<STDIN>) {
 			my %args = eval $_;
@@ -111,7 +116,6 @@ given ($name) {
 		}
 	}
 	when (defined $commands{$name}) {
-		my $r;
 		$commands{$name}{command}->($name, $rpc);
 	}
 	default {

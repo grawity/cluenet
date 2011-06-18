@@ -1,4 +1,7 @@
 "noop" => {
+	requires =>
+	["noop"],
+
 	command =>
 	sub {
 		check $r = authenticate;

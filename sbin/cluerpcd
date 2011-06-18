@@ -10,6 +10,7 @@ use Cluenet::Kerberos;
 use Cluenet::Rpc;
 use Cluenet::Rpc::Server;
 use Data::Dumper;
+use File::Basename;
 use IO::Handle;
 use IPC::Open2;
 use JSON;
@@ -157,6 +158,12 @@ $commands{auth} = sub {
 	}
 };
 
+$commands{"list"} = sub {
+	my @cmds = map {basename($_, ".pl")} glob(COMMAND_DIR."/*.pl");
+	return {success, commands => \@cmds};
+};
+
+
 sub get_command {
 	my $cmd = shift;
 	if ($cmd =~ /^\w+$/) {
@@ -174,8 +181,8 @@ sub load_command {
 		if ($@) {
 			syslog(LOG_ERR, "sourcing $file failed: $@");
 		}
-		if ($name and $sub) {
-			$commands{$name} = $sub;
+		if ($sub) {
+			$commands{$cmd} = $sub;
 			return $sub;
 		}
 	} else {

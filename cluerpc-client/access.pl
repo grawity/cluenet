@@ -8,6 +8,9 @@ use feature "switch";
 	description =>
 	"request access to a service (samba, ftp)",
 
+	requires =>
+	["grant_access"],
+
 	command =>
 	sub {
 		my $service = shift(@ARGV);

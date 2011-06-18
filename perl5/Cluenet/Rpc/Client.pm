@@ -27,7 +27,7 @@ sub connect_spawn {
 	$self->{host} = getfqdn;
 }
 
-sub connect_socket {
+sub connect {
 	use IO::Socket::INET6;
 	my ($self, $addr, $port) = @_;
 	$addr //= getfqdn;
