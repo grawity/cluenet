@@ -3,9 +3,11 @@ package Cluenet::Rpc::Client;
 use warnings;
 use strict;
 use feature "say";
+use feature "switch";
 use base "Cluenet::Rpc";
 use Authen::SASL;
 use Cluenet::Common;
+use Cluenet::Kerberos;
 use Cluenet::Rpc;
 use IO::Handle;
 
@@ -54,6 +56,12 @@ sub authenticate {
 	my ($self, $mech) = @_;
 	$mech //= "GSSAPI";
 
+	given (uc $mech) {
+		when ("GSSAPI") {
+			krb5_ensure_tgt;
+		}
+	}
+
 	my $reply = $self->sasl_step($mech);
 	until (defined $reply->{status}) {
 		$reply = $self->sasl_step(b64_decode($reply->{data}));
@@ -88,7 +96,7 @@ sub sasl_step {
 	}
 
 	if ($self->{sasl}->code < 0) {
-		return {failure, msg => join(" ", $self->{sasl}->error)};
+		return {failure, msg => ($self->{sasl}->error)[1]};
 	}
 	return $self->request($req);
 }

@@ -65,7 +65,7 @@ GetOptions(
 	"v|verbose!"	=> \$verbose,
 	"y|yes!"	=> \$yes,
 	"z|authz=s"	=> \$user,
-);
+) or exit(2);
 
 # connect to RPC server
 

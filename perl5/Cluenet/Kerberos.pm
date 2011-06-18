@@ -51,11 +51,7 @@ sub krb5_canonuser {
 
 sub krb5_ensure_tgt {
 	if (system("klist", "-5s") > 0) {
-		warn "Kerberos 5 ticket needed.\n";
-		system("kinit");
-	}
-	if (system("klist", "-5s") > 0) {
-		die "Authentication failed.\n";
+		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
 	}
 }
 
