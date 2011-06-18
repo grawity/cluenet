@@ -22,6 +22,15 @@ our @EXPORT = qw(
 
 our $krb5_ctx = Authen::Krb5::init_context;
 
+sub parse_principal {
+	Authen::Krb5::parse_name(shift);
+}
+
+sub unparse_principal {
+	my $p = shift;
+	join("@", join("/", $p->data), $p->realm);
+}
+
 sub krb5_kuserok {
 	my ($authzid, $princ) = @_;
 	return 1 if $princ =~ m|.+/admin\@CLUENET\.ORG$|;
@@ -99,6 +108,19 @@ sub kinit {
 	$ccache->initialize($princ);
 	$ccache->store_cred($cred);
 	return $ccache;
+}
+
+package Authen::Krb5::Principal;
+use overload '""' => \&unparse;
+use Carp;
+
+sub new {
+	my ($class, $princ) = @_;
+	Authen::Krb5::parse_name($princ // croak "Usage: ${class}>new(principal)");
+}
+
+sub unparse {
+	Cluenet::Kerberos::unparse_principal(shift);
 }
 
 1;
