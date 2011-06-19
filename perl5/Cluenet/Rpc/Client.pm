@@ -5,13 +5,22 @@ use strict;
 use feature "say";
 use feature "switch";
 use base "Cluenet::Rpc";
+use base "Exporter";
 use Authen::SASL;
 use Cluenet::Common;
 use Cluenet::Kerberos;
 use Cluenet::Rpc;
 use IO::Handle;
 
-use constant SASL_SERVICE => "host";
+use constant {
+	RPC_PORT	=> 10875,
+	SASL_SERVICE	=> "host",
+};
+
+our @EXPORT = qw(
+	RPC_PORT
+	check
+	);
 
 sub new { bless {}, shift; }
 
@@ -33,7 +42,7 @@ sub connect {
 	use IO::Socket::INET6;
 	my ($self, $addr, $port) = @_;
 	$addr //= getfqdn;
-	$port //= "cluerpc";
+	$port //= RPC_PORT;
 
 	my $sock = IO::Socket::INET6->new(
 			PeerAddr => $addr,
@@ -50,6 +59,17 @@ sub request {
 	my $self = shift;
 	$self->rpc_send(ref $_[0] ? $_[0] : {@_});
 	return $self->rpc_recv;
+}
+
+sub check {
+	my $r = shift;
+	if (!$r->{status}) {
+		if ($r->{error}) {
+			chomp(my $err = join("\n", $r->{error}));
+			warn "$err\n";
+		}
+		die "\033[1;31mError: ".($r->{msg} // "unknown error")."\033[m\n";
+	}
 }
 
 sub authenticate {

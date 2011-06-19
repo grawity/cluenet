@@ -33,17 +33,6 @@ sub confirm {
 sub authenticate	{ $rpc->authenticate(@_); }
 sub request		{ $rpc->request(@_); }
 
-sub check {
-	my $r = shift;
-	if (!$r->{status}) {
-		if ($r->{error}) {
-			chomp(my $err = join("\n", $r->{error}));
-			warn "$err\n";
-		}
-		die "\033[1;31mError: ".($r->{msg} // "unknown error")."\033[m\n";
-	}
-}
-
 # load available commands
 
 for my $file (glob(COMMAND_DIR)) {
@@ -109,10 +98,12 @@ given ($name) {
 	}
 	when ("raw") {
 		check $r = authenticate;
+		print "perl: ";
 		while (<STDIN>) {
 			my %args = eval $_;
 			$r = request(%args);
-			print Dumper($r);
+			print Data::Dumper->Dump([$r], ["Reply"]);
+			print "perl: ";
 		}
 	}
 	when (defined $commands{$name}) {
