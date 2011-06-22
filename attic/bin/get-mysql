@@ -1,0 +1,160 @@
+#!/usr/bin/env perl
+# Creates a MySQL account for the current user or resets the password for existing one.
+# Only <user>@localhost is created, with full access to "<user>\_%" databases.
+#
+# <grawity@gmail.com>
+
+use warnings;
+use strict;
+use English;
+use Sys::Syslog qw(:standard :macros);
+use DBI;
+
+use constant {
+	SELF		=> "/cluenet/bin/get-mysql",
+	ROOT_USER	=> "root",
+	ROOT_PW_FILE	=> "/root/MYSQL_ROOT_PASSWORD",
+};
+
+my $yes;
+my $db;
+my $user;
+my $pw;
+my $loguser;
+my $rootpw;
+my $elevated;
+
+sub usage {
+	if ($UID > 0) {
+		print STDERR for (
+		"Usage: get-mysql\n",
+		"\n",
+		"Creates a MySQL account for current user.\n",
+		);
+	} else {
+		print STDERR for (
+		"Usage: get-mysql <user>\n",
+		"\n",
+		"When ran as root, creates a MySQL account for the specified user.\n",
+		);
+	}
+	return 2;
+}
+
+# Create a MySQL account or reset its password
+sub create_account {
+	my ($user) = @_;
+
+	my $userid = qq{'$user'\@'localhost'};
+	my $pw = pwgen();
+
+	$db->do("GRANT ALL ON `${user}\\_%`.* TO $userid IDENTIFIED BY '$pw'") or die;
+	syslog(LOG_NOTICE, "MySQL userid %s updated", $userid);
+
+	return $pw;
+}
+
+# Generate a password
+sub pwgen {
+	my @chars = ('A'..'Z', 'a'..'z', '0'..'9');
+	my $chars = @chars;
+	return join "", map {$chars[int rand $chars]} 1..12;
+}
+
+# Get the login UID
+sub getloguid {
+	my $luid = read_one_line("/proc/self/loginuid");
+	if (defined $luid) {
+		$luid = int $luid;
+		return $luid == 0xFFFFFFFF ? undef : $luid;
+	} else {
+		return;
+	}
+}
+
+sub getloguser {
+	my $luid = getloguid;
+	if (defined $luid) {
+		return (getpwuid($luid))[0] . "($luid)";
+	} else {
+		syslog(LOG_ERR, "unable to determine login UID");
+		die "Unable to determine login UID.\n";
+	}
+}
+
+sub reexec_elevated {
+	$ENV{SUDO_PROMPT} = "Confirm password for %u@%h: ";
+	exec {"sudo"} ("sudo", SELF, "-e", @ARGV)
+		or die "Access denied (failed to exec 'sudo').\n";
+}
+
+sub read_one_line {
+	my $file = shift;
+	if (open my $fh, "<", $file) {
+		chomp(my $line = <$fh>);
+		close $fh;
+		return $line;
+	}
+}
+
+# restart self as root
+if ($UID > 0) {
+	if (@ARGV) {
+		exit(usage);
+	} else {
+		reexec_elevated;
+	}
+}
+
+openlog("get-mysql", "pid", LOG_AUTHPRIV);
+
+$loguser = getloguser;
+
+# determine who to create the database for
+if (@ARGV) {
+	if ($ARGV[0] eq "-e") {
+		# called by reexec_elevated()
+		$elevated = 1;
+		$user = $ENV{SUDO_USER} // $loguser // die "Who are you?!\n";
+	} else {
+		# ran manually
+		$user = shift(@ARGV);
+	}
+} else {
+	exit(usage);
+}
+
+syslog(LOG_INFO, "requested account creation by %s for %s", $loguser, $user);
+if (!getpwnam($user)) {
+	if ($elevated) {
+		die "You do not exist in system account database.\n";
+	} else {
+		warn "Warning: User '$user' does not exist in system account database.\n";
+	}
+}
+
+$rootpw = read_one_line(ROOT_PW_FILE);
+if (!$rootpw) {
+	syslog(LOG_ERR, "unable to read MySQL root password from '%s': %s",
+		ROOT_PW_FILE, $!);
+	die "Unable to obtain root privileges for MySQL.\n";
+}
+$db = DBI->connect("DBI:mysql:host=localhost", ROOT_USER, $rootpw);
+
+unless ($yes) {
+	print "Create MySQL account '\033[1m${user}\033[m'? [yn] ";
+	exit unless <STDIN> =~ /^y/i;
+}
+
+$pw = create_account($user);
+
+print <<EOF;
+
+Username:	\033[1m$user\033[m
+Password:	\033[1m$pw\033[m
+Databases:	\033[1m${user}_*\033[m
+
+You can change the password and create databases at:
+https://equal.cluenet.org/phpmyadmin/
+
+EOF
