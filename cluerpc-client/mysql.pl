@@ -12,8 +12,6 @@ use feature "say";
 
 	command =>
 	sub {
-		my $user = $ENV{USER};
-
 		confirm "Create MySQL account '\033[1m${user}\033[m'?";
 
 		check $r = authenticate;
