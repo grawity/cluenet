@@ -19,13 +19,14 @@ use Sys::Syslog qw(:standard :macros);
 
 use constant {
 	SASL_SERVICE	=> "host",
-	KRB5_KEYTAB	=> Cluenet::Common::CONFIG_DIR."/cluerpc.keytab",
 	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-server",
 	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc-server",
 };
 
 my $state = {};
 my %commands;
+my $conffile;
+my $config;
 
 # SASL authentication
 
@@ -215,8 +216,17 @@ sub handle_request {
 openlog("cluerpcd", "pid", LOG_DAEMON);
 setlogmask(LOG_UPTO(LOG_NOTICE));
 
-if (defined KRB5_KEYTAB) {
-	$ENV{KRB5_KTNAME} = KRB5_KEYTAB;
+$conffile = Cluenet::Common::CONFIG_DIR."/cluerpcd.conf";
+if (-f $conffile) {
+	$config = do $conffile;
+	if (!defined $config) {
+		syslog(LOG_ERR, "failed loading config file: $@");
+		exit 1;
+	}
+}
+
+if (defined $config->{keytab}) {
+	$ENV{KRB5_KTNAME} = $config->{keytab};
 }
 
 $state = Cluenet::Rpc::Server->new;

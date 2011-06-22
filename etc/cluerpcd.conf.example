@@ -1,0 +1,4 @@
+#!perl
+{
+	keytab => undef,
+}
