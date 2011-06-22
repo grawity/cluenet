@@ -3,7 +3,7 @@ use feature "switch";
 
 "keystore" => {
 	usage =>
-	"keystore {ls|get|put|rm} [name]",
+	"keystore {ls|get|put|rename|delete} [name]",
 
 	description =>
 	"access the key store",
@@ -44,7 +44,13 @@ use feature "switch";
 				check $r = request(cmd => "keystore",
 							action => "put", name => $name, data => $buf);
 			}
-			when ("rm") {
+			when (["rename", "mv"]) {
+				check $r = authenticate;
+				my ($name, $to) = @ARGV;
+				check $r = request(cmd => "keystore", action => "rename",
+						name => $name, to => $to);
+			}
+			when (["delete", "rm"]) {
 				check $r = authenticate;
 				for (@ARGV) {
 					check $r => request(cmd => "keystore",
