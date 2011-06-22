@@ -61,6 +61,10 @@ sub ks_list {
 	map {$_->{name}} @{$r->{items}};
 }
 
+if (!defined $ENV{SSH_AUTH_SOCK}) {
+	die "SSH agent not running\n";
+}
+
 @agentkeys = sshagent_list;
 
 $rpc = Cluenet::Rpc::Client->new;
