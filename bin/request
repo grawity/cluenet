@@ -43,9 +43,9 @@ for my $file (glob(COMMAND_DIR)) {
 	$commands{$name} = $command;
 }
 
-$user = $ENV{USER};
-$host = getfqdn;
-$port = 10875;
+$user = getlogin;
+$host = undef;
+$port = undef;
 $debug = $ENV{DEBUG} || 0;
 
 GetOptions(
