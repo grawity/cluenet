@@ -19,8 +19,8 @@ use Sys::Syslog qw(:standard :macros);
 
 use constant {
 	SASL_SERVICE	=> "host",
-	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-server",
-	HELPER_DIR	=> "/home/grawity/cluenet/cluerpc-server",
+	COMMAND_DIR	=> "/cluenet/lib/cluerpcd",
+	HELPER_DIR	=> "/cluenet/lib/cluerpcd",
 };
 
 my $state = {};

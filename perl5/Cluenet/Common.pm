@@ -21,9 +21,8 @@ our @EXPORT = qw(
 	server_fqdn
 	);
 
-use constant {
-	CONFIG_DIR		=> $ENV{CLUENET_CONFIG} // "/cluenet/etc",
-};
+use constant BASEDIR		=> $ENV{CLUENET_DIR} // "/cluenet";
+use constant CONFIG_DIR		=> $ENV{CLUENET_CONFIG} // BASEDIR."/etc";
 
 sub read_line {
 	my ($file) = @_;

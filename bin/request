@@ -9,9 +9,7 @@ use Cluenet::Rpc::Client;
 use Data::Dumper;
 use Getopt::Long qw(:config bundling no_ignore_case require_order);
 
-use constant {
-	COMMAND_DIR	=> "/home/grawity/cluenet/cluerpc-client/*.pl",
-};
+use constant COMMAND_DIR => Cluenet::Common::BASEDIR."/lib/cluerpc/*.pl";
 
 my %commands;
 my $debug;
