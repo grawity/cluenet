@@ -22,7 +22,7 @@ our @EXPORT = qw(
 	);
 
 use constant {
-	CONFIG_DIR		=> $ENV{CLUENET_CONFIG} // "/home/grawity/cluenet/etc",
+	CONFIG_DIR		=> $ENV{CLUENET_CONFIG} // "/cluenet/etc",
 };
 
 sub read_line {
