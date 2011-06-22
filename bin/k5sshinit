@@ -9,10 +9,12 @@ use POSIX;
 use Data::Dumper;
 use Getopt::Long qw(:config bundling no_ignore_case);
 
-my @agentkeys;
 my $host;
-my $r;
+my $verbose;
+
+my @agentkeys;
 my $rpc;
+my $r;
 
 sub sshagent_list {
 	my (@list, $fh);
@@ -26,6 +28,7 @@ sub sshagent_list {
 
 sub sshagent_add {
 	my ($name, $data) = @_;
+	$verbose and warn "Importing key '$name'\n";
 
 	my ($dir, $fh, $pub);
 
@@ -67,15 +70,15 @@ if (!defined $ENV{SSH_AUTH_SOCK}) {
 	die "SSH agent not running\n";
 }
 
-$host = undef;
-
 GetOptions(
 	"h|host=s"	=> \$host,
+	"v|verbose!"	=> \$verbose,
 ) or exit(2);
 
 @agentkeys = sshagent_list;
 
 $rpc = Cluenet::Rpc::Client->new;
+$rpc->{verbose} = $verbose;
 $rpc->connect($host);
 check $r = $rpc->authenticate();
 
