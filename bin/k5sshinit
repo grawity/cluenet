@@ -1,14 +1,16 @@
 #!/usr/bin/env perl
 use warnings;
 use strict;
-#use Cluenet::Rpc;
+use Cluenet::Common;
 use Cluenet::Rpc::Client;
 use File::Temp;
 use IO::Handle;
 use POSIX;
 use Data::Dumper;
+use Getopt::Long qw(:config bundling no_ignore_case);
 
 my @agentkeys;
+my $host;
 my $r;
 my $rpc;
 
@@ -65,10 +67,16 @@ if (!defined $ENV{SSH_AUTH_SOCK}) {
 	die "SSH agent not running\n";
 }
 
+$host = undef;
+
+GetOptions(
+	"h|host=s"	=> \$host,
+) or exit(2);
+
 @agentkeys = sshagent_list;
 
 $rpc = Cluenet::Rpc::Client->new;
-$rpc->connect();
+$rpc->connect($host);
 check $r = $rpc->authenticate();
 
 if (@ARGV) {
