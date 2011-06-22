@@ -21,6 +21,10 @@ our @EXPORT = qw(
 	server_fqdn
 	);
 
+use constant {
+	CONFIG_DIR		=> $ENV{CLUENET_CONFIG} // "/home/grawity/cluenet/etc",
+};
+
 sub read_line {
 	my ($file) = @_;
 	if (open my $fh, "<", $file) {

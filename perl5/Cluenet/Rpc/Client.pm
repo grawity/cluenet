@@ -22,7 +22,16 @@ our @EXPORT = qw(
 	check
 	);
 
-sub new { bless {}, shift; }
+sub new {
+	my $self = {};
+	$self->{callbacks} = {
+		user => sub { getlogin },
+	};
+	if ($ENV{DEBUG}) {
+		$self->{debug} = 1;
+	}
+	bless $self, shift;
+}
 
 sub connect_stdio {
 	my $self = shift;

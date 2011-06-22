@@ -1,0 +1,74 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+#use Cluenet::Rpc;
+use Cluenet::Rpc::Client;
+use File::Temp;
+use IO::Handle;
+use POSIX;
+use Data::Dumper;
+
+my @agentkeys;
+my $r;
+my $rpc;
+
+sub sshagent_list {
+	my (@list, $fh);
+	open($fh, "-|", "ssh-add", "-L")
+		or die "Unable to spawn ssh-add: $!\n";
+	while (<$fh>) {
+		/^(\S+ \S+) / and push @list, $1;
+	}
+	return @list;
+}
+
+sub sshagent_add {
+	my ($name, $data) = @_;
+
+	my ($dir, $fh, $pub);
+
+	umask(077);
+
+	$dir = File::Temp->newdir("sshinit.XXXXXXXX", TMPDIR => 1, CLEANUP => 1);
+	chdir($dir)
+		or die "Unable to change to temporary directory.\n";
+	
+	open($fh, ">", $name);
+	$fh->print($data);
+	$fh->close;
+
+	open($fh, "-|", "ssh-keygen", "-y", "-f", $name)
+		or die "$!\n";
+	chomp($pub = <$fh>);
+	$fh->close;
+
+	unless (grep {$_ eq $pub} @agentkeys) {
+		system("ssh-add", $name);
+		push @agentkeys, $pub;
+	}
+
+	chdir("/");
+}
+
+sub ks_import {
+	my ($name) = @_;
+	check $r = $rpc->request(cmd => "keystore", action => "get", name => $name);
+	sshagent_add($name, $r->{data});
+}
+
+sub ks_list {
+	check $r = $rpc->request(cmd => "keystore", action => "list");
+	map {$_->{name}} @{$r->{items}};
+}
+
+@agentkeys = sshagent_list;
+
+$rpc = Cluenet::Rpc::Client->new;
+$rpc->connect();
+check $r = $rpc->authenticate();
+
+if (@ARGV) {
+	ks_import($_) for @ARGV;
+} else {
+	ks_import($_) for grep {/^id_/} ks_list;
+}
