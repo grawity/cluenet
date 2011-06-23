@@ -31,16 +31,6 @@ sub confirm {
 sub authenticate	{ $rpc->authenticate(@_); }
 sub request		{ $rpc->request(@_); }
 
-# load available commands
-
-for my $file (glob(COMMAND_DIR)) {
-	my ($name, $command) = do $file;
-	if ($@) {
-		warn "Loading $file failed: $@\n";
-	}
-	$commands{$name} = $command;
-}
-
 $user = getlogin;
 $host = undef;
 $port = undef;
@@ -53,6 +43,19 @@ GetOptions(
 	"y|yes!"	=> \$yes,
 	"z|authz=s"	=> \$user,
 ) or exit(2);
+
+# load available commands
+
+for my $file (glob(COMMAND_DIR)) {
+	if ($debug) {
+		warn "Loading $file...\n";
+	}
+	my ($name, $command) = do $file;
+	if ($@) {
+		warn "Loading $file failed: $@\n";
+	}
+	$commands{$name} = $command;
+}
 
 # connect to RPC server
 
