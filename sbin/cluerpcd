@@ -19,7 +19,7 @@ use Sys::Syslog qw(:standard :macros);
 
 use constant {
 	SASL_SERVICE	=> "host",
-	COMMAND_DIR	=> "/cluenet/lib/cluerpcd",
+	COMMAND_DIR	=> "/cluenet/etc/cluerpcd",
 	HELPER_DIR	=> "/cluenet/lib/cluerpcd",
 };
 
