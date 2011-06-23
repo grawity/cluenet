@@ -102,7 +102,7 @@ sub authenticate {
 	if ($reply->{status}) {
 		$self->{seal} = 1;
 		if ($self->{verbose}) {
-			say "\033[32mAuthenticated as $reply->{authuser} (authorized for $reply->{user})\033[m";
+			warn "\033[32mAuthenticated as $reply->{authuser} (authorized for $reply->{user})\033[m\n";
 		}
 	}
 	return $reply;
