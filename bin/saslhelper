@@ -1,0 +1,88 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use feature "say";
+use IO::Handle;
+use Authen::SASL;
+use Cluenet::Common;
+use Cluenet::Rpc;
+use Getopt::Long qw(:config bundling no_ignore_case);
+use Data::Dumper;
+
+my %cb;
+my $use_pw;
+
+my $service	= 'host';
+my $host	= getfqdn;
+my $mech	= 'plain';
+my $user	= getlogin;
+my $authuser	= getlogin;
+my $password;
+
+%cb = (
+	user		=> sub { return $user },
+	pass		=> sub { return $password },
+);
+
+GetOptions(
+	'm|mech=s'	=> \$mech,
+	's|service=s'	=> \$service,
+	'h|host=s'	=> \$host,
+	'u|user=s'	=> \$user,
+	'n|authnid=s'	=> \$authuser,
+	'p|password'	=> \$use_pw,
+) or die "$!";
+
+unless (defined $host && defined $service && defined $mech) {
+	die "Missing host/service/mech parameters.\n";
+}
+
+if ($use_pw) {
+	chomp($password = STDIN->getline);
+}
+
+if (defined $authuser) {
+	$cb{authuser} = sub { return $authuser };
+}
+
+sub auth {
+	my $nsteps;
+	my $sasl;
+	my $inbuf;
+	my $outbuf;
+
+	$sasl = Authen::SASL->new(mech => uc $mech, callback => \%cb)
+			->client_new($service, $host);
+
+	if ($sasl->code < 0) {
+		say "err ".($sasl->error)[1];
+		exit 1;
+	}
+
+	do {
+		if ($nsteps++ == 0) {
+			$outbuf = $sasl->client_start;
+		} else {
+			say "read";
+			$inbuf = b64_decode(STDIN->getline);
+			$outbuf = $sasl->client_step($inbuf);
+		}
+
+		if ($sasl->code < 0) {
+			say "err ".($sasl->error)[1];
+			exit 1;
+		} else {
+			say "write ".b64_encode($outbuf);
+		}
+
+	} while ($sasl->need_step);
+
+	if ($sasl->code < 0) {
+		say "err ".($sasl->error)[1];
+		exit 1;
+	} else {	
+		say "done";
+	}
+}
+
+auth;
