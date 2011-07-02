@@ -36,12 +36,12 @@ sub spawn_helper {
 	my (@cmd, $data, $pid, $infd, $outfd, $reply);
 
 	push @cmd, File::Spec->catfile($self->{rpchelperdir} // ".", $name);
-	push @cmd, "--for", $self->{authzid};
+	push @cmd, "--for", $self->{user};
 
 	$req //= {};
 
 	$data = {user => $self->{user},
-		authzid => $self->{authzid},
+		authuser => $self->{authuser},
 		request => $req};
 
 	if ($pid = open2($infd, $outfd, @cmd)) {
@@ -62,8 +62,8 @@ sub rpc_helper_main(&) {
 
 	$data = rpc_decode(<STDIN>);
 	push @args, $data->{request};
-	push @args, $data->{authzid} // $data->{user};
-	push @args, $data->{user};
+	push @args, $data->{user} // $data->{authuser};
+	push @args, $data->{authuser};
 
 	$reply = eval {$sub->(@args)};
 	if ($@) {
