@@ -18,7 +18,7 @@ use feature "switch";
 
 	given ($req->{service}) {
 		when ("mysql") {
-			my $data = {user => $state->{authzid}, ifexists => 1};
+			my $data = {user => $state->{user}, ifexists => 1};
 			return $state->spawn_helper("rd-mysql", $data);
 		}
 		when ("samba") {

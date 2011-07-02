@@ -31,14 +31,14 @@ my $config;
 # SASL authentication
 
 sub authorize {
-	my ($state, $authzid, $user) = @_;
-	syslog(LOG_DEBUG, "authorize called: authz=$authzid user=$user");
+	my ($state, $user, $authuser) = @_;
+	syslog(LOG_DEBUG, "authorize called: authz=$user authn=$authuser");
 	given ($state->{sasl}->mechanism) {
 		when ("GSSAPI") {
-			return krb5_kuserok($authzid, $user);
+			return krb5_kuserok($user, $authuser);
 		}
 		default {
-			return krb5_canonuser($authzid) eq $user;
+			return krb5_canonuser($user) eq $authuser;
 		}
 	}
 }
@@ -58,7 +58,7 @@ my %callbacks = (
 	checkpass => sub {
 		my ($state, $user, $pass) = @_;
 		if (checkpass($state, $user, $pass)) {
-			$state->{user} = $user;
+			$state->{authuser} = $user;
 			return 1;
 		} else {
 			return 0;
@@ -66,10 +66,10 @@ my %callbacks = (
 	},
 
 	authorize => sub {
-		my ($state, $authzid, $user) = @_;
-		if (authorize($state, $authzid, $user)) {
-			$state->{user} = $user;
-			$state->{authzid} = $authzid;
+		my ($state, $authzid, $authnid) = @_;
+		if (authorize($state, $authzid, $authnid)) {
+			$state->{user} = $authzid;
+			$state->{authuser} = $authnid;
 			return 1;
 		} else {
 			return 0;
@@ -146,10 +146,10 @@ $commands{auth} = sub {
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
 		$state->{seal_next} = 1;
-		syslog(LOG_INFO, "authenticated %s as %s", $state->{authzid}, $state->{user});
+		syslog(LOG_INFO, "authenticated %s as %s", $state->{authuser}, $state->{user});
 		return {success,
 			user => $state->{user},
-			authzid => $state->{authzid}};
+			authuser => $state->{authuser}};
 	}
 	else {
 		$state->{eof} = 1;

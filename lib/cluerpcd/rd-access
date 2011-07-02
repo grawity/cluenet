@@ -54,17 +54,17 @@ sub modify_acl {
 }
 
 sub forward_request {
-	my ($req, $authz, $authn) = @_;
+	my ($req, $user, $authuser) = @_;
 
 	my @message = (
 		"To: ".REQUEST_RECIPIENT,
-		"Subject: User '$authz' requested access to $req->{server}/$req->{service}",
+		"Subject: User '$user' requested access to $req->{server}/$req->{service}",
 		"",
 		"Request information:",
-		"\tuser    = $authz",
+		"\tuser    = $user",
 		"\tserver  = $req->{server}",
 		"\tservice = $req->{service}",
-		"\tauthnid = $authn",
+		"\tauth    = $authuser",
 	);
 
 	open my $fh, "|-", "/usr/sbin/sendmail", "-i", REQUEST_RECIPIENT;
@@ -80,7 +80,7 @@ my $ccache = kinit_as_service("host", keytab => KEYTAB_FILE);
 $ENV{KRB5CCNAME} = $ccache->get_name;
 
 Cluenet::Rpc::helper_main {
-	my ($req, $authz, $authn) = @_;
+	my ($req, $user, $authuser) = @_;
 
 	my @required = qw(user server service action);
 
@@ -88,7 +88,7 @@ Cluenet::Rpc::helper_main {
 		return {failure, msg => "missing parameter"};
 	}
 
-	unless (defined $authz and $authz eq $req->{user}) {
+	unless (defined $user and $user eq $req->{user}) {
 		return {failure, msg => "access denied"};
 	}
 
@@ -102,7 +102,7 @@ Cluenet::Rpc::helper_main {
 				$req->{user}, $req->{action});
 		}
 		default {
-			return forward_request($req, $authz, $authn);
+			return forward_request($req, $user, $authuser);
 		}
 	}
 };

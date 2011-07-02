@@ -15,7 +15,7 @@
 			msg => "wrong server"};
 	}
 
+	$req->{user} = $state->{user};
 	$req->{action} = $req->{revoke} ? "revoke" : "grant";
-	$req->{user} = $state->{authzid};
 	return $state->spawn_helper("rd-access", $req);
 };

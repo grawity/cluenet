@@ -23,13 +23,13 @@ our @EXPORT = qw(
 	);
 
 sub new {
-	my $self = {};
-	$self->{callbacks} = {
-		user => sub { getlogin },
+	my $self = {
+		callbacks	=> {
+			user => sub { getlogin },
+		},
+		debug		=> $ENV{DEBUG} // 0,
+		die_on_failure	=> 0,
 	};
-	if ($ENV{DEBUG}) {
-		$self->{debug} = 1;
-	}
 	bless $self, shift;
 }
 
@@ -67,7 +67,11 @@ sub connect {
 sub request {
 	my $self = shift;
 	$self->rpc_send(ref $_[0] ? $_[0] : {@_});
-	return $self->rpc_recv;
+	my $reply = $self->rpc_recv;
+	if ($self->{die_on_failure}) {
+		check $reply;
+	}
+	return $reply;
 }
 
 sub check {
@@ -93,12 +97,12 @@ sub authenticate {
 
 	my $reply = $self->sasl_step($mech);
 	until (defined $reply->{status}) {
-		$reply = $self->sasl_step(b64_decode($reply->{data}));
+		$reply = $self->sasl_step($reply->{data});
 	}
 	if ($reply->{status}) {
 		$self->{seal} = 1;
 		if ($self->{verbose}) {
-			say "\033[32mAuthenticated as $reply->{user} (authorized for $reply->{authzid})\033[m";
+			say "\033[32mAuthenticated as $reply->{authuser} (authorized for $reply->{user})\033[m";
 		}
 	}
 	return $reply;
@@ -119,7 +123,7 @@ sub sasl_step {
 		$req->{data} = b64_encode($self->{sasl}->client_start);
 	}
 	else {
-		my $data = shift;
+		my $data = b64_decode(shift);
 		$req = {cmd => "auth"};
 		$req->{data} = b64_encode($self->{sasl}->client_step($data));
 	}

@@ -7,7 +7,7 @@
 			msg => "access denied"};
 	}
 
-	$req->{user} = $state->{authzid};
+	$req->{user} = $state->{user};
 	$req->{ifexists} = 0;
 	return $state->spawn_helper("rd-mysql", $req);
 };

@@ -31,17 +31,17 @@ sub reset_password {
 }
 
 rpc_helper_main {
-	my ($req, $authz) = @_;
+	my ($req, $user) = @_;
 
-	if (!$authz) {
+	if (!$user) {
 		return {failure,
 			msg => "access denied"};
 	}
 
-	if (!is_valid_user($authz)) {
+	if (!is_valid_user($user)) {
 		return {failure,
 			msg => "no such Samba account"};
 	}
 
-	return reset_password($authz);
+	return reset_password($user);
 };

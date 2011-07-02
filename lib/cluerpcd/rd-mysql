@@ -66,13 +66,13 @@ sub update_account {
 }
 
 rpc_helper_main {
-	my ($req, $authz) = @_;
+	my ($req, $user) = @_;
 
 	unless (defined $req->{user}) {
 		return {failure, msg => "missing user parameter"};
 	}
 
-	unless (defined $authz and $authz eq $req->{user}) {
+	unless (defined $user and $user eq $req->{user}) {
 		return {failure, msg => "access denied"};
 	}
 
