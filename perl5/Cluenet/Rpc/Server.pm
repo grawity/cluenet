@@ -45,7 +45,7 @@ sub spawn_helper {
 		request => $req};
 
 	if ($pid = open2($infd, $outfd, @cmd)) {
-		$outfd->print(Cluenet::Rpc::rpc_encode($data), "\n");
+		$outfd->print(rpc_encode($data), "\n");
 		$outfd->close;
 		$reply = rpc_decode($infd->getline);
 		waitpid($pid, WNOHANG);

@@ -31,9 +31,9 @@ sub b64_decode { MIME::Base64::decode_base64(shift // "") }
 
 Basic structure:
 
-	magic[4]	= "!rpc"
-	length[4]	= data length in hexadecimal
-	data[length]	= RPC data
+	char magic[4]		= "!rpc"
+	char length[4]		= data length in hexadecimal
+	char data[length]	= RPC data
 
 If negotiated during authentication, data is encrypted using sasl_encode().
 
@@ -45,39 +45,51 @@ Data is a JSON-encoded hash.
 
 =cut
 
-sub rpc_send {
-	my $state = shift;
-	my $data = rpc_encode(shift);
-	$state->{debug} and warn "SEND: $data\n";
-	if ($state->{seal}) {
-		$data = $state->{sasl}->encode($data);
+sub rpc_send_packed {
+	my ($fd, $buf) = @_;
+	$fd->printf("!rpc%04x", length($buf));
+	$fd->write($buf, length($buf));
+	$fd->flush;
+}
+
+sub rpc_recv_packed {
+	my $fd = shift;
+	my ($len, $buf);
+	# read magic+length
+	unless ($fd->read($buf, 8)) {
+		return {failure, msg => "connection closed"};
 	}
-	$state->{outfd}->printf("!rpc%04x", length($data));
-	$state->{outfd}->write($data, length($data));
-	$state->{outfd}->flush;
-	return;
+	# check magic number to avoid parsing Perl errors
+	unless (substr($buf, 0, 4) eq "!rpc") {
+		return {failure, msg => "invalid data",
+			data => $buf.$fd->getline};
+	}
+	# read data
+	$len = hex(substr($buf, 4));
+	unless ($fd->read($buf, $len) == $len) {
+		return {failure, msg => "connection closed"};
+	}
+	return $buf;
+}
+
+sub rpc_send {
+	my $self = shift;
+	my $data = rpc_encode(shift);
+	$self->{debug} and warn "SEND: $data\n";
+	if ($self->{seal}) {
+		$data = $self->{sasl}->encode($data);
+	}
+	rpc_send_packed($self->{outfd}, $data);
 }
 
 sub rpc_recv {
-	my $state = shift;
-	my ($len, $buf);
-	unless ($state->{infd}->read($buf, 8)) {
-		return {failure, msg => "connection closed"};
+	my $self = shift;
+	my $data = rpc_recv_packed($self->{infd});
+	if ($self->{seal}) {
+		$data = $self->{sasl}->decode($data);
 	}
-	unless (substr($buf, 0, 4) eq "!rpc") {
-		# check for magic number to avoid trying to parse Perl errors
-		$state->{debug} and warn "DATA? ".$buf.$state->{infd}->getline."\n";
-		return {failure, msg => "invalid data"};
-	}
-	$len = hex(substr($buf, 4));
-	unless ($state->{infd}->read($buf, $len) == $len) {
-		return {failure, msg => "connection closed"};
-	}
-	if ($state->{seal}) {
-		$buf = $state->{sasl}->decode($buf);
-	}
-	$state->{debug} and warn "RECV: $buf\n";
-	return rpc_decode($buf);
+	$self->{debug} and warn "RECV: $data\n";
+	return rpc_decode($data);
 }
 
 1;
