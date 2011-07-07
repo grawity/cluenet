@@ -33,20 +33,6 @@ sub new {
 	bless $self, shift;
 }
 
-sub connect_stdio {
-	my $self = shift;
-	$self->{infd} = \*STDIN;
-	$self->{outfd} = \*STDOUT;
-	$self->{host} = getfqdn;
-}
-
-sub connect_spawn {
-	use IPC::Open2;
-	my $self = shift;
-	$self->{pid} = open2($self->{infd}, $self->{outfd}, "./cluerpcd");
-	$self->{host} = getfqdn;
-}
-
 sub connect {
 	use IO::Socket::INET6;
 	my ($self, $addr, $port) = @_;
@@ -57,7 +43,8 @@ sub connect {
 			PeerAddr => $addr,
 			PeerPort => $port,
 			Proto => "tcp")
-			or die "connect($addr, $port) failed: $!\n";
+		or die "connect($addr, $port) failed: $!\n";
+
 	$sock->autoflush(0);
 	$self->{infd} = $sock;
 	$self->{outfd} = $sock;
@@ -95,9 +82,9 @@ sub authenticate {
 		}
 	}
 
-	my $reply = $self->sasl_step($mech);
+	my $reply = $self->_sasl_step($mech);
 	until (defined $reply->{status}) {
-		$reply = $self->sasl_step($reply->{data});
+		$reply = $self->_sasl_step($reply->{data});
 	}
 	if ($reply->{status}) {
 		$self->{seal} = 1;
@@ -108,7 +95,7 @@ sub authenticate {
 	return $reply;
 }
 
-sub sasl_step {
+sub _sasl_step {
 	my $self = shift;
 	my $req;
 	if (!defined $self->{sasl}) {
