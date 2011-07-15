@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use base "Exporter";
 use feature "say";
-
+use Carp;
 use IO::Handle;
 use JSON;
 use MIME::Base64;
@@ -61,8 +61,9 @@ sub rpc_recv_packed {
 	}
 	# check magic number to avoid parsing Perl errors
 	unless (substr($buf, 0, 4) eq "!rpc") {
-		return {failure, msg => "invalid data",
-			data => $buf.$fd->getline};
+		$buf .= $fd->getline;
+		$buf .= "\n" unless $buf =~ /\n$/s;
+		die "Invalid data received:\n$buf";
 	}
 	# read data
 	$len = hex(substr($buf, 4));
@@ -85,11 +86,15 @@ sub rpc_send {
 sub rpc_recv {
 	my $self = shift;
 	my $data = rpc_recv_packed($self->{infd});
-	if ($self->{seal}) {
-		$data = $self->{sasl}->decode($data);
+	if (ref $data eq 'HASH') {
+		return $data;
+	} else {
+		if ($self->{seal}) {
+			$data = $self->{sasl}->decode($data);
+		}
+		$self->{debug} and warn "RECV: $data\n";
+		return rpc_decode($data);
 	}
-	$self->{debug} and warn "RECV: $data\n";
-	return rpc_decode($data);
 }
 
 1;
