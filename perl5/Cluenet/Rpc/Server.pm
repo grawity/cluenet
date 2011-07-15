@@ -50,7 +50,9 @@ sub spawn_helper {
 		$reply = rpc_decode($infd->getline);
 		waitpid($pid, WNOHANG);
 	} else {
-		$reply = {failure, msg => "internal error"};
+		$reply = {failure,
+				msg => "internal error",
+				err => "spawn_helper failed to execute '$name'"};
 	}
 	return $reply;
 }
@@ -68,9 +70,12 @@ sub rpc_helper_main(&) {
 	$reply = eval {$sub->(@args)};
 	if ($@) {
 		chomp $@;
-		$reply = {failure, msg => "internal error: $@"};
+		$reply = {failure,
+				msg => "internal error: $@"};
 	} else {
-		$reply //= {failure, msg => "internal error"};
+		$reply //= {failure,
+				msg => "internal error",
+				err => "rpc_helper_main failed"};
 	}
 	say rpc_encode($reply);
 }
