@@ -1,4 +1,8 @@
 #!perl
-"noop" => sub {
+name => "noop",
+
+access => "all",
+
+func => sub {
 	return {success, msg => "Nothing happens."};
 };

@@ -1,5 +1,9 @@
 #!perl
-"grant_mysql" => sub {
+name => "grant_mysql",
+
+access => "auth",
+
+func => sub {
 	my ($state, $req) = @_;
 
 	unless ($state->{authed}) {

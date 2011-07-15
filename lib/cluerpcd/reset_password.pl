@@ -1,7 +1,11 @@
 #!perl
 use feature "switch";
 
-"reset_password" => sub {
+name => "reset_password",
+
+access => "auth",
+
+func => sub {
 	my ($state, $req) = @_;
 
 	my @services = qw(mysql samba);

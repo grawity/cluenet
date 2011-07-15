@@ -1,6 +1,9 @@
 #!perl
+name => "keystore",
 
-"keystore" => sub {
+access => "auth",
+
+func => sub {
 	my ($state, $req) = @_;
 	use MIME::Base64;
 
