@@ -22,16 +22,16 @@ use constant {
 	HELPER_DIR	=> "/cluenet/lib/cluerpcd",
 };
 
-my $state = {};
 my %commands;
 my $conffile;
 my $config;
+my $server;
 
 # SASL authentication
 
 sub authorize {
-	my ($state, $user, $authuser) = @_;
-	given ($state->{sasl}->mechanism) {
+	my ($server, $user, $authuser) = @_;
+	given ($server->{sasl}->mechanism) {
 		when ("GSSAPI") {
 			return krb5_kuserok($user, $authuser);
 		}
@@ -42,8 +42,7 @@ sub authorize {
 }
 
 sub checkpass {
-	my ($state, $user, $pass) = @_;
-	syslog(LOG_DEBUG, "checkpass called: user=$user");
+	my ($server, $user, $pass) = @_;
 	my $krb = Authen::Krb5::Simple->new;
 	return $krb->authenticate($user, $pass);
 }
@@ -54,9 +53,9 @@ my %callbacks = (
 	},
 
 	checkpass => sub {
-		my ($state, $user, $pass) = @_;
-		if (checkpass($state, $user, $pass)) {
-			$state->{authuser} = $user;
+		my ($server, $user, $pass) = @_;
+		if (checkpass($server, $user, $pass)) {
+			$server->{authuser} = $user;
 			return 1;
 		} else {
 			return 0;
@@ -64,10 +63,10 @@ my %callbacks = (
 	},
 
 	authorize => sub {
-		my ($state, $authzid, $authnid) = @_;
-		if (authorize($state, $authzid, $authnid)) {
-			$state->{user} = $authzid;
-			$state->{authuser} = $authnid;
+		my ($server, $authzid, $authnid) = @_;
+		if (authorize($server, $authzid, $authnid)) {
+			$server->{user} = $authzid;
+			$server->{authuser} = $authnid;
 			return 1;
 		} else {
 			return 0;
@@ -79,14 +78,12 @@ my %callbacks = (
 	},
 
 	canonuser => sub {
-		my ($state, $type, $_a, $flags, $user) = @_;
-		given ($type) {
-			when ("AUTHID") {
-				return krb5_canonuser($user);
-			}
-			default {
-				return $user;
-			}
+		my ($server, $type, $_a, $flags, $user) = @_;
+		if ($type eq 'AUTHID') {
+			return krb5_canonuser($user);
+		}
+		else {
+			return $user;
 		}
 	},
 );
@@ -215,18 +212,17 @@ if (defined $config->{keytab}) {
 	$ENV{KRB5_KTNAME} = $config->{keytab};
 }
 
-$state = Cluenet::Rpc::Server->new;
-$state->{rpchelperdir} = HELPER_DIR;
+$server = Cluenet::Rpc::Server->new;
+$server->{rpchelperdir} = HELPER_DIR;
 
-my ($req, $reply, $sub);
-while (my $req = $state->rpc_recv) {
-	$reply = handle_request($state, $req);
-	$state->rpc_send($reply);
+while (my $req = $server->rpc_recv) {
+	my $reply = handle_request($server, $req);
+	$server->rpc_send($reply);
 
-	if ($state->{seal_next}) {
-		$state->{seal} = 1;
+	if ($server->{seal_next}) {
+		$server->{seal} = 1;
 	}
-	if ($state->{eof}) {
+	if ($server->{eof}) {
 		exit;
 	}
 }
