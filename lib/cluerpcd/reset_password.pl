@@ -8,28 +8,32 @@ use feature "switch";
 		return {failure,
 			msg => "access denied"};
 	}
-	unless (defined $req->{service}) {
+
+	my %services = (
+		mysql => sub {
+			my $data = {user => $self->{user}, ifexists => 1};
+			return $self->spawn_helper("rd-mysql", $data);
+		},
+		samba => sub {
+			return $self->spawn_helper("rd-smbpasswd");
+		},
+	);
+
+	my $svc = $req->{service};
+
+	if (!defined $svc) {
 		return {failure,
 			msg => "missing parameter"};
 	}
-
-	my @services = qw(mysql samba);
-
-	given ($req->{service}) {
-		when ("mysql") {
-			my $data = {user => $self->{user}, ifexists => 1};
-			return $self->spawn_helper("rd-mysql", $data);
-		}
-		when ("samba") {
-			return $self->spawn_helper("rd-smbpasswd");
-		}
-		when ("") {
-			return {success,
-				services => \@services};
-		}
-		default {
-			return {failure,
-				msg => "unknown service"};
-		}
+	elsif ($svc eq "") {
+		return {success,
+			services => [keys %services]};
+	}
+	elsif (exists $services{$svc}) {
+		return $services{$svc}->();
+	}
+	else {
+		return {failure,
+			msg => "unknown service"};
 	}
 };
