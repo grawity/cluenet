@@ -76,16 +76,20 @@ sub rpc_recv_packed {
 sub rpc_send {
 	my $self = shift;
 	my $data = rpc_encode(shift);
+	my $fd = shift // $self->{outfd};
+
 	$self->{debug} and warn "SEND: $data\n";
 	if ($self->{seal}) {
 		$data = $self->{sasl}->encode($data);
 	}
-	rpc_send_packed($self->{outfd}, $data);
+	rpc_send_packed($fd, $data);
 }
 
 sub rpc_recv {
 	my $self = shift;
-	my $data = rpc_recv_packed($self->{infd});
+	my $fd = shift // $self->{infd};
+
+	my $data = rpc_recv_packed($fd);
 	if (ref $data eq 'HASH') {
 		return $data;
 	} else {
