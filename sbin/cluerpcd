@@ -48,10 +48,6 @@ sub checkpass {
 }
 
 my %callbacks = (
-	user => sub {
-		die "user callback: ".Dumper(\@_);
-	},
-
 	checkpass => sub {
 		my ($server, $user, $pass) = @_;
 		if (checkpass($server, $user, $pass)) {
@@ -71,10 +67,6 @@ my %callbacks = (
 		} else {
 			return 0;
 		}
-	},
-
-	password => sub {
-		warn "getsecret ".Dumper([@_]);
 	},
 
 	canonuser => sub {
