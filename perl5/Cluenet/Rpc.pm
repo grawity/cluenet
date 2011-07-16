@@ -45,8 +45,11 @@ Data is a JSON-encoded hash.
 
 =cut
 
+# send/receive binary data
+
 sub rpc_send_packed {
 	my ($fd, $buf) = @_;
+
 	$fd->printf("!rpc%04x", length($buf));
 	$fd->write($buf, length($buf));
 	$fd->flush;
@@ -54,6 +57,7 @@ sub rpc_send_packed {
 
 sub rpc_recv_packed {
 	my $fd = shift;
+
 	my ($len, $buf);
 	# read magic+length
 	unless ($fd->read($buf, 8)) {
@@ -73,32 +77,48 @@ sub rpc_recv_packed {
 	return $buf;
 }
 
-sub rpc_send {
-	my $self = shift;
-	my $data = rpc_encode(shift);
-	my $fd = shift // $self->{outfd};
+# send/receive Perl objects
 
-	$self->{debug} and warn "SEND: $data\n";
+sub rpc_send {
+	my ($self, $data) = @_;
+
+	my $buf = rpc_encode($data);
+	$self->{debug} and warn "SEND: $buf\n";
 	if ($self->{seal}) {
-		$data = $self->{sasl}->encode($data);
+		$buf = $self->{sasl}->encode($buf);
 	}
-	rpc_send_packed($fd, $data);
+	rpc_send_packed($self->{outfd}, $buf);
 }
 
 sub rpc_recv {
 	my $self = shift;
-	my $fd = shift // $self->{infd};
 
-	my $data = rpc_recv_packed($fd);
-	if (ref $data eq 'HASH') {
-		return $data;
-	} else {
-		if ($self->{seal}) {
-			$data = $self->{sasl}->decode($data);
-		}
-		$self->{debug} and warn "RECV: $data\n";
-		return rpc_decode($data);
+	my $buf = rpc_recv_packed($self->{infd});
+	if (ref $buf eq 'HASH') {
+		return $buf;
 	}
+	if ($self->{seal}) {
+		$buf = $self->{sasl}->decode($buf);
+	}
+	$self->{debug} and warn "RECV: $buf\n";
+	return rpc_decode($buf);
+}
+
+sub rpc_send_fd {
+	my ($data, $fd) = @_;
+
+	my $buf = rpc_encode($data);
+	rpc_send_packed($fd // *STDOUT, $buf);
+}
+
+sub rpc_recv_fd {
+	my ($fd) = @_;
+
+	my $buf = rpc_recv_packed($fd // *STDIN);
+	if (ref $buf eq 'HASH') {
+		return $buf;
+	}
+	return rpc_decode($buf);
 }
 
 1;

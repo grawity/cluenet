@@ -45,9 +45,9 @@ sub spawn_helper {
 		request => $req};
 
 	if ($pid = open2($infd, $outfd, @cmd)) {
-		$outfd->print(rpc_encode($data), "\n");
+		Cluenet::Rpc::rpc_send_fd($data, $outfd);
 		$outfd->close;
-		$reply = rpc_decode($infd->getline);
+		$reply = Cluenet::Rpc::rpc_recv_fd($infd);
 		waitpid($pid, WNOHANG);
 	} else {
 		$reply = {failure,
@@ -62,7 +62,7 @@ sub rpc_helper_main(&) {
 
 	my ($data, @args, $reply);
 
-	$data = rpc_decode(<STDIN>);
+	$data = Cluenet::Rpc::rpc_recv_fd(*STDIN);
 	push @args, $data->{request};
 	push @args, $data->{user} // $data->{authuser};
 	push @args, $data->{authuser};
@@ -77,7 +77,7 @@ sub rpc_helper_main(&) {
 				msg => "internal error",
 				err => "rpc_helper_main failed"};
 	}
-	say rpc_encode($reply);
+	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
 }
 
 1;
