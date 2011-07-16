@@ -1,8 +1,8 @@
 use feature "say";
 
-"mysql" => {
+"get-mysql" => {
 	usage =>
-	"mysql",
+	"get-mysql",
 
 	description =>
 	"create a MySQL account",

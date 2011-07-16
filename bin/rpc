@@ -7,6 +7,7 @@ use Cluenet::Common;
 use Cluenet::Rpc;
 use Cluenet::Rpc::Client;
 use Data::Dumper;
+use File::Basename;
 use Getopt::Long qw(:config bundling no_ignore_case require_order);
 
 use constant COMMAND_DIR => Cluenet::Common::BASEDIR."/lib/cluerpc/*.pl";
@@ -19,6 +20,8 @@ my $rpc;
 our $user;
 my $verbose;
 my $yes;
+
+sub APPNAME { basename($0) }
 
 sub confirm {
 	unless ($yes) {
@@ -70,10 +73,10 @@ $rpc->connect($host, $port);
 
 # run requests
 
-my $name = shift(@ARGV) // "help";
+my $cmd = shift(@ARGV) // "help";
 my $r;
 
-given ($name) {
+given ($cmd) {
 	when ("help") {
 		check $r = request(cmd => "list");
 		say "Usage:";
@@ -85,7 +88,7 @@ given ($name) {
 			}
 
 			if (defined $cmd->{usage}) {
-				say "request $cmd->{usage}";
+				say APPNAME." $cmd->{usage}";
 			} else {
 				next;
 			}
@@ -107,8 +110,8 @@ given ($name) {
 			print "perl: ";
 		}
 	}
-	when (defined $commands{$name}) {
-		$commands{$name}{command}->($name, $rpc);
+	when (defined $commands{$cmd}) {
+		$commands{$cmd}{command}->($cmd, $rpc);
 	}
 	default {
 		die "Unknown command.\n";

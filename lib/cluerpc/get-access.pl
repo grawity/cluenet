@@ -1,9 +1,9 @@
 use feature "say";
 use feature "switch";
 
-"access" => {
+"get-access" => {
 	usage =>
-	"access [-]SERVICE",
+	"get-access [-]SERVICE",
 
 	description =>
 	"request access to a service (samba, ftp)",
