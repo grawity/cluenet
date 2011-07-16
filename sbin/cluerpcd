@@ -164,8 +164,6 @@ sub get_command {
 			return undef;
 		}
 		else {
-			# TODO: is this actually necessary?
-			@commands{$name} = $func;
 			return $func;
 		}
 	}
