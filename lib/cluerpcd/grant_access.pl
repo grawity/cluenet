@@ -1,9 +1,5 @@
 #!perl
-name => "grant_access",
-
-access => "auth",
-
-func => sub {
+"grant_access" => sub {
 	my ($state, $req) = @_;
 
 	unless ($state->{authed}) {

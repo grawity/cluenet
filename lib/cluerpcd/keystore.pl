@@ -1,11 +1,6 @@
 #!perl
-name => "keystore",
-
-access => "auth",
-
-func => sub {
+"keystore" => sub {
 	my ($state, $req) = @_;
-	use MIME::Base64;
 
 	unless ($state->{authed}) {
 		return {failure,

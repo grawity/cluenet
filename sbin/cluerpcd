@@ -95,7 +95,7 @@ my %callbacks = (
 
 ## RPC commands
 
-$commands{"auth"}{func} = sub {
+$commands{"auth"} = sub {
 	my ($state, $req) = @_;
 	my ($auth, $response, $challenge);
 
@@ -159,71 +159,39 @@ $commands{"auth"}{func} = sub {
 	}
 };
 
-$commands{"list"}{func} = sub {
+$commands{"list"} = sub {
 	my @cmds = map {basename($_, ".pl")} glob(COMMAND_DIR."/*.pl");
 	return {success, commands => \@cmds};
 };
 
 
 sub get_command {
-	my $cmdname = shift;
-	if ($cmdname =~ /^\w+$/) {
-		return $commands{$cmdname} //= load_command($cmdname);
-	} else {
-		return undef;
-	}
-}
+	my $name = shift;
+	return undef unless $name =~ /^\w+$/;
+	return $commands{$name} if defined $commands{$name};
 
-sub load_command {
-	my $cmdname = shift;
-	my $file = COMMAND_DIR."/".$cmdname.".pl";
+	my $file = COMMAND_DIR."/".$name.".pl";
 	if (-f $file) {
-		my %cmd = do $file;
+		my ($name, $func) = do $file;
 		if ($@) {
 			syslog(LOG_ERR, "sourcing $file failed: $@");
+			return undef;
 		}
 		else {
-			$commands{$cmd{name}} = \%cmd;
-			return \%cmd;
+			# TODO: is this actually necessary?
+			@commands{$name} = $func;
+			return $func;
 		}
-	} else {
-		syslog(LOG_NOTICE, "file not found: $file");
-		return undef;
 	}
-}
 
-sub check_access {
-	my ($state, $req, $cmd) = @_;
-	if (defined $cmd->{access}) {
-		given (ref $cmd->{access}) {
-			when ('CODE') {
-				return $cmd->{access}->($state, $req);
-				goto policy_checked;
-			}
-			when ('ARRAY') {
-				return $state->{authed}
-					&& $state->{user} ~~ $cmd->{access};
-			}
-		}
-		given ($cmd->{access}) {
-			when ('all') {
-				return 1;
-			}
-			when ('auth') {
-				return $state->{authed};
-			}
-		}
-		return 0;
-	}
-	else {
-		return 1;
-	}
+	syslog(LOG_NOTICE, "file not found: $file");
+	return undef;
 }
 
 sub handle_request {
 	my ($state, $req) = @_;
 	if (!defined $req->{cmd}) {
-		return {failure, msg => "missing command"};
+		return {failure, msg => "missing command name"};
 	}
 
 	my $cmd = get_command($req->{cmd});
@@ -231,11 +199,7 @@ sub handle_request {
 		return {failure, msg => "invalid command"};
 	}
 
-	if (!check_access($state, $req, $cmd)) {
-		return {failure, msg => "access denied"};
-	}
-
-	my $reply = eval { $cmd->{func}->($state, $req) };
+	my $reply = eval { $cmd->($state, $req) };
 	if ($@) {
 		return {failure, msg => "$@"};
 	} else {
