@@ -1,11 +1,11 @@
 #!perl
 "keystore" => sub {
-	my ($state, $req) = @_;
+	my ($self, $req) = @_;
 
-	unless ($state->{authed}) {
+	unless ($self->{authed}) {
 		return {failure,
 			msg => "access denied"};
 	}
 
-	return $state->spawn_helper("rd-keystore", $req);
+	return $self->spawn_helper("rd-keystore", $req);
 };

@@ -1,8 +1,8 @@
 #!perl
 "grant_access" => sub {
-	my ($state, $req) = @_;
+	my ($self, $req) = @_;
 
-	unless ($state->{authed}) {
+	unless ($self->{authed}) {
 		return {failure,
 			msg => "access denied"};
 	}
@@ -15,7 +15,7 @@
 			msg => "wrong server"};
 	}
 
-	$req->{user} = $state->{user};
+	$req->{user} = $self->{user};
 	$req->{action} = $req->{revoke} ? "revoke" : "grant";
-	return $state->spawn_helper("rd-access", $req);
+	return $self->spawn_helper("rd-access", $req);
 };

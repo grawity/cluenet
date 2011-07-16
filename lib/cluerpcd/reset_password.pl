@@ -2,9 +2,9 @@
 use feature "switch";
 
 "reset_password" => sub {
-	my ($state, $req) = @_;
+	my ($self, $req) = @_;
 
-	unless ($state->{authed}) {
+	unless ($self->{authed}) {
 		return {failure,
 			msg => "access denied"};
 	}
@@ -17,11 +17,11 @@ use feature "switch";
 
 	given ($req->{service}) {
 		when ("mysql") {
-			my $data = {user => $state->{user}, ifexists => 1};
-			return $state->spawn_helper("rd-mysql", $data);
+			my $data = {user => $self->{user}, ifexists => 1};
+			return $self->spawn_helper("rd-mysql", $data);
 		}
 		when ("samba") {
-			return $state->spawn_helper("rd-smbpasswd");
+			return $self->spawn_helper("rd-smbpasswd");
 		}
 		when ("") {
 			return {success,

@@ -1,13 +1,13 @@
 #!perl
 "grant_mysql" => sub {
-	my ($state, $req) = @_;
+	my ($self, $req) = @_;
 
-	unless ($state->{authed}) {
+	unless ($self->{authed}) {
 		return {failure,
 			msg => "access denied"};
 	}
 
-	$req->{user} = $state->{user};
+	$req->{user} = $self->{user};
 	$req->{ifexists} = 0;
-	return $state->spawn_helper("rd-mysql", $req);
+	return $self->spawn_helper("rd-mysql", $req);
 };
