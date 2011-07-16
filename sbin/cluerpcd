@@ -146,7 +146,9 @@ $commands{"auth"} = sub {
 
 $commands{"list"} = sub {
 	my @cmds = map {basename($_, ".pl")} glob(COMMAND_DIR."/*.pl");
-	return {success, commands => \@cmds};
+	push @cmds, keys %commands;
+	return {success,
+		commands => [sort @cmds]};
 };
 
 
