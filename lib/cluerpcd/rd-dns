@@ -108,23 +108,20 @@ sub update_db {
 		}
 
 		when ("delsubdomain") {
-			unless ($req->{zone} and $req->{domains}) {
+			unless ($req->{domains}) {
 				return {failure,
 					msg => "missing parameter"};
 			}
 
-			my $zone = lc $req->{zone};
 			my @domains = @{$req->{domains}};
 			my $rows = 0;
 			my $sth = $dbh->prepare(q[
 					DELETE FROM `records`
-					WHERE zone = ?
-					AND (fqdn = ? OR fqdn LIKE ?)
+					WHERE fqdn = ? OR fqdn LIKE ?
 				]);
-			$sth->bind_param(1, $zone);
 			for my $domain (@domains) {
-				$sth->bind_param(2, $domain);
-				$sth->bind_param(3, '%.'.$domain);
+				$sth->bind_param(1, $domain);
+				$sth->bind_param(2, '%.'.$domain);
 				$rows += $sth->execute;
 			}
 			$dbh->commit;
