@@ -13,8 +13,8 @@ use feature "switch";
 
 	command =>
 	sub {
-		my $cmd = shift(@ARGV);
-		given ($cmd // "ls") {
+		my $action = shift(@ARGV);
+		given ($action // "ls") {
 			when ("ls") {
 				check $r = authenticate;
 				check $r = request(cmd => "keystore", action => "list");
@@ -58,7 +58,7 @@ use feature "switch";
 				}
 			}
 			default {
-				die "Invalid subcommand '$cmd'\n";
+				die "Invalid action '$action'\n";
 			}
 		}
 	},
