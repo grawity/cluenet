@@ -30,6 +30,12 @@ sub is_allowed {
 	return 1;
 }
 
+sub trigger_reload {
+	my ($zone) = @_;
+	# TODO: implement
+	1;
+}
+
 sub update_db {
 	my ($dbh, $req, $user) = @_;
 
@@ -64,6 +70,7 @@ sub update_db {
 				$rows += $sth->execute;
 			}
 			$dbh->commit;
+			trigger_reload($zone);
 			return {success,
 				count => $rows};
 		}
@@ -103,6 +110,7 @@ sub update_db {
 				$rows += $dbh->do($sth);
 			}
 			$dbh->commit;
+			trigger_reload($zone);
 			return {success,
 				count => $rows};
 		}
@@ -125,6 +133,7 @@ sub update_db {
 				$rows += $sth->execute;
 			}
 			$dbh->commit;
+			trigger_reload();
 			return {success,
 				count => $rows};
 		}
