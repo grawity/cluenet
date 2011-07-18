@@ -60,8 +60,8 @@ sub rpc_recv_packed {
 
 	my ($len, $buf);
 	# read magic+length
-	unless ($fd->read($buf, 8)) {
-		return {failure, msg => "connection closed"};
+	unless ($fd->read($buf, 8) == 8) {
+		return undef;
 	}
 	# check magic number to avoid parsing Perl errors
 	unless (substr($buf, 0, 4) eq "!rpc") {
@@ -72,7 +72,7 @@ sub rpc_recv_packed {
 	# read data
 	$len = hex(substr($buf, 4));
 	unless ($fd->read($buf, $len) == $len) {
-		return {failure, msg => "connection closed"};
+		return undef;
 	}
 	return $buf;
 }
@@ -94,8 +94,8 @@ sub rpc_recv {
 	my $self = shift;
 
 	my $buf = rpc_recv_packed($self->{infd});
-	if (ref $buf eq 'HASH') {
-		return $buf;
+	if (!defined $buf) {
+		return {failure, msg => "connection closed while reading"};
 	}
 	if ($self->{seal}) {
 		$buf = $self->{sasl}->decode($buf);
@@ -115,8 +115,8 @@ sub rpc_recv_fd {
 	my ($fd) = @_;
 
 	my $buf = rpc_recv_packed($fd // *STDIN);
-	if (ref $buf eq 'HASH') {
-		return $buf;
+	if (!defined $buf) {
+		return;
 	}
 	return rpc_decode($buf);
 }

@@ -3,10 +3,6 @@ DNS management:
 	server, client: figure out automatic fqdn->zone
 	(mainly for delsubdomain, but also for other cmds)
 
-	server: implement MySQL->zonefile generation
-
 	server: implement reload trigger
-
-	server: return checkzone results
 
 	server: check against LDAP ACLs

@@ -69,8 +69,7 @@ sub update_db {
 						\@records);
 			if (!$r->{status}) {
 				return {failure,
-					msg => "invalid zone data",
-					err => join("\n", @{$r->{output}})};
+					msg => "invalid zone data:\n".join("\n", @{$r->{output}})};
 			}
 
 			my $rows = 0;
@@ -90,6 +89,35 @@ sub update_db {
 			trigger_reload($zone);
 			return {success,
 				count => $rows};
+		}
+
+		when ("validate") {
+			unless ($req->{zone} and $req->{records}) {
+				return {failure,
+					msg => "missing parameter"};
+			}
+
+			my $zone = lc $req->{zone};
+			my @records = @{$req->{records}};
+
+			for my $rec (@records) {
+				return {failure,
+					msg => "missing attribute"}
+					unless $rec->{fqdn} && length($rec->{type}) && length($rec->{data});
+
+				fqdnize($rec->{fqdn}, $zone);
+			}
+
+			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone",
+						"-c", "-z", $zone],
+						\@records);
+			if ($r->{status}) {
+				return {success,
+					msg => "zone warnings:\n".join("\n", @{$r->{output}})};
+			} else {
+				return {failure,
+					msg => "invalid zone data:\n".join("\n", @{$r->{output}})};
+			}
 		}
 
 		when ("delete") {
