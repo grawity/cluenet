@@ -34,6 +34,11 @@ sub trigger_reload {
 	1;
 }
 
+sub fqdnize(\$$) {
+	my ($domain, $zone) = @_;
+	$$domain =~ /\.$/ or $$domain .= ".".$zone;
+}
+
 sub update_db {
 	my ($dbh, $req, $user) = @_;
 
@@ -56,6 +61,8 @@ sub update_db {
 				return {failure,
 					msg => "missing attribute"}
 					unless $rec->{fqdn} && length($rec->{type}) && length($rec->{data});
+
+				fqdnize($rec->{fqdn}, $zone);
 
 				return {failure,
 					msg => "access denied"}
@@ -87,6 +94,8 @@ sub update_db {
 				return {failure,
 					msg => "missing attribute"}
 					unless $rec->{fqdn};
+
+				fqdnize($rec->{fqdn}, $zone);
 
 				return {failure,
 					msg => "access denied"}
