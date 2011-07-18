@@ -31,15 +31,23 @@ use feature "switch";
 		use Getopt::Long qw(:config bundling no_ignore_case);
 
 		my $zone = "cluenet.org";
+		my $quiet = 0;
+
 		GetOptions(
+			'q|quiet!'	=> \$quiet,
 			'z|zone=s'	=> \$zone,
 		) or die "$@";
 
-		my $action = shift(@ARGV);
+		my $action = shift(@ARGV) // "help";
+
 		given ($action) {
-			when (undef) {
-				my @delete;
-				my @add;
+			when ("update") {
+				my (@add, @delete);
+
+				if (-t 0) {
+					say "# add <fqdn> <ttl> <type> <data>";
+					say "# delete <fqdn> [<type> [<data>]]";
+				}
 
 				while (my $line = <STDIN>) {
 					chomp($line);
@@ -75,63 +83,69 @@ use feature "switch";
 								action => "delete",
 								zone => $zone,
 								records => \@delete);
+					$quiet || say $r->{count}." records deleted.";
 				}
 				if (@add) {
 					check $r = request(cmd => "dns",
 								action => "add",
 								zone => $zone,
 								records => \@add);
+					$quiet || say $r->{count}." records added.";
 				}
 			}
 
 			when ("add") {
-				my @records;
-				while (my $line = <STDIN>) {
-					chomp($line);
-					my ($fqdn, $ttl, $type, $data) = split(/\s+/, $line, 4);
-					push @records, {
-						fqdn	=> $fqdn,
-						ttl	=> $ttl,
-						type	=> $type,
-						data	=> $data};
+				my %rec;
+				GetOptions(
+					'f|fqdn=s'	=> \$rec{fqdn},
+					'T|ttl=i'	=> \$rec{ttl},
+					't|type=s'	=> \$rec{type},
+					'd|data=s'	=> \$rec{data},
+				) or die "$@";
+
+				unless (defined $rec{fqdn} and defined $rec{type} and defined $rec{data}) {
+					die "Missing fqdn, type and/or data\n";
 				}
-				
+				$rec{ttl} //= 10800;
 				check $r = authenticate;
 				check $r = request(cmd => "dns",
-							action => $action,
+							action => "add",
 							zone => $zone,
-							records => \@records);
+							records => [\%rec]);
+
+				$quiet || say $r->{count}." records added.";
 			}
 
 			when ("delete") {
-				my @records;
-				while (my $line = <STDIN>) {
-					chomp($line);
-					my ($fqdn, $type, $data) = split(/\s+/, $line, 3);
-					push @records, {
-						fqdn	=> $fqdn,
-						type	=> $type,
-						data	=> $data};
+				my %rec;
+				GetOptions(
+					'f|fqdn=s'	=> \$rec{fqdn},
+					't|type=s'	=> \$rec{type},
+					'd|data=s'	=> \$rec{data},
+				) or die "$@";
+
+				unless (defined $rec{fqdn}) {
+					die "Missing fqdn\n";
 				}
-				
 				check $r = authenticate;
 				check $r = request(cmd => "dns",
-							action => $action,
+							action => "delete",
 							zone => $zone,
-							records => \@records);
+							records => [\%rec]);
+
+				$quiet || say $r->{count}." records deleted.";
 			}
 
 			when ("delsubdomain") {
-				my @domains;
-				while (my $line = <STDIN>) {
-					chomp($line);
-					push @domains, $line;
-				}
-				
+				my @domains = @ARGV;
+
+				return unless @domains;
 				check $r = authenticate;
 				check $r = request(cmd => "dns",
 							action => $action,
 							domains => \@domains);
+
+				$quiet || say $r->{count}." records deleted.";
 			}
 
 			default {
