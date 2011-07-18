@@ -149,8 +149,10 @@ sub update_db {
 						$match{data} = $rec->{data};
 					}
 				} else {
-					return {failure,
-						msg => "missing attribute: 'data' requires 'type'"};
+					if (defined $rec->{data}) {
+						return {failure,
+							msg => "missing attribute: 'data' requires 'type'"};
+					}
 				}
 				my $sth = q[DELETE FROM `records` WHERE ].join(" AND ",
 					map {$_." = ".$dbh->quote($match{$_})} keys %match);
