@@ -9,10 +9,8 @@ use DBI;
 
 use constant {
 	DB_HOST		=> "DBI:mysql:host=localhost;database=grawity_cluedns",
-	# FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME
-	DB_USER		=> "root",
-	DB_PASSWD_FILE	=> "/cluenet/etc/cluerpcd/creds/mysql-root",
-	# FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME FIXME
+	DB_USER		=> "cluedns",
+	DB_PASSWD_FILE	=> "/cluenet/etc/cluerpcd/creds/mysql-dns",
 };
 
 sub DB_PASSWD { read_line(DB_PASSWD_FILE) }

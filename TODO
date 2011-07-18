@@ -1,7 +1,5 @@
 DNS management:
 
-	server: create separate MySQL account instead of using root
-
 	server, client: figure out automatic fqdn->zone
 	(mainly for delsubdomain, but also for other cmds)
 
