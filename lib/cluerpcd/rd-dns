@@ -48,7 +48,7 @@ sub update_db {
 			my @records = @{$req->{records}};
 			my $rows = 0;
 			my $sth = $dbh->prepare(q[
-					INSERT INTO `records` (`zone`, `fqdn`, `rrtype`, `data`, `ttl`)
+					INSERT INTO `records` (`zone`, `fqdn`, `type`, `data`, `ttl`)
 					VALUES (?, ?, ?, ?, ?)
 				]);
 			$sth->bind_param(1, $zone);
@@ -95,7 +95,7 @@ sub update_db {
 				$match{zone} = $zone;
 				$match{fqdn} = $rec->{fqdn};
 				if (defined $rec->{type}) {
-					$match{rrtype} = $rec->{type};
+					$match{type} = $rec->{type};
 					if (defined $rec->{data}) {
 						$match{data} = $rec->{data};
 					}
