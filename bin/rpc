@@ -20,8 +20,13 @@ my $rpc;
 our $user;
 my $verbose;
 my $yes;
+my @USAGE;
 
 sub APPNAME { basename($0) }
+
+sub joins {
+	join(" ", grep {defined} @_);
+}
 
 sub confirm {
 	unless ($yes) {
@@ -78,26 +83,47 @@ my $r;
 
 given ($cmd) {
 	when ("help") {
-		check $r = request(cmd => "list");
-		say "Usage:";
-		say "";
-		for my $name (sort keys %commands) {
-			my $cmd = $commands{$name};
-			if (grep {!($_ ~~ @{$r->{commands}})} @{$cmd->{requires}}) {
-				next;
-			}
-
-			if (defined $cmd->{usage}) {
-				say APPNAME." $cmd->{usage}";
-			} else {
-				next;
-			}
-
-			if (defined $cmd->{description}) {
-				say "\t$cmd->{description}";
-			}
-
+		my $cmd = shift(@ARGV);
+		if (defined $cmd and defined $commands{$cmd}) {
+			my $cinfo = $commands{$cmd};
+			say "Usage:";
 			say "";
+			if (defined $cinfo->{usage}) {
+				say joins(APPNAME, $cmd, $cinfo->{usage});
+				if (defined $cinfo->{description}) {
+					say "\t$cinfo->{description}";
+				}
+				say "";
+			}
+			if (defined $cinfo->{help}) {
+				for my $subcmd (sort keys %{$cinfo->{help}}) {
+					say joins(APPNAME, $cmd, $subcmd, $cinfo->{help}{$subcmd});
+				}
+				say "";
+			}
+		}
+		elsif (defined $cmd) {
+			die "Unknown command '$cmd'.\n";
+		}
+		else {
+			check $r = request(cmd => "list");
+			say "Usage:";
+			say "";
+			for my $cmd (sort keys %commands) {
+				my $cinfo = $commands{$cmd};
+				if (grep {!($_ ~~ @{$r->{commands}})} @{$cinfo->{requires}}) {
+					next;
+				}
+				if (defined $cinfo->{usage}) {
+					say joins(APPNAME, $cmd, $cinfo->{usage});
+				} else {
+					next;
+				}
+				if (defined $cinfo->{description}) {
+					say "\t$cinfo->{description}";
+				}
+				say "";
+			}
 		}
 	}
 	when ("raw") {
@@ -114,6 +140,6 @@ given ($cmd) {
 		$commands{$cmd}{command}->($cmd, $rpc);
 	}
 	default {
-		die "Unknown command.\n";
+		die "Unknown command '$cmd'.\n";
 	}
 }

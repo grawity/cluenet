@@ -3,7 +3,7 @@ use feature "switch";
 
 "keystore" => {
 	usage =>
-	"keystore {ls|get|put|rename|delete} [name]",
+	"{ls|get|put|rename|delete} [name]",
 
 	description =>
 	"access the key store",

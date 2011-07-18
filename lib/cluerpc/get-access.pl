@@ -3,7 +3,7 @@ use feature "switch";
 
 "get-access" => {
 	usage =>
-	"get-access [-]SERVICE",
+	"[-]SERVICE",
 
 	description =>
 	"request access to a service (samba, ftp)",

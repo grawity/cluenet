@@ -3,7 +3,25 @@ use feature "switch";
 
 "dns" => {
 	usage =>
-	"dns [add|delete|delsubdomain]",
+	"[add|delete|update|delsubdomain]",
+
+#	description =>
+#	"update DNS information",
+
+	help =>
+	{
+		add =>
+		"-f fqdn [-T ttl] -t type -d data",
+
+		delete =>
+		"-f fqdn [-t type [-d data]]",
+
+		update =>
+		"[< commands]",
+
+		delsubdomain =>
+		"fqdn",
+	},
 
 	requires =>
 	["dns"],

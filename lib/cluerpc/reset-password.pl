@@ -2,7 +2,7 @@ use feature "say";
 
 "reset-password" => {
 	usage =>
-	"reset-password SERVICE",
+	"SERVICE",
 
 	description =>
 	"reset password for given service",

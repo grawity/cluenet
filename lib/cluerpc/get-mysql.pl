@@ -2,7 +2,7 @@ use feature "say";
 
 "get-mysql" => {
 	usage =>
-	"get-mysql",
+	"",
 
 	description =>
 	"create a MySQL account",
