@@ -51,12 +51,7 @@ sub update_db {
 
 			my $zone = lc $req->{zone};
 			my @records = @{$req->{records}};
-			my $rows = 0;
-			my $sth = $dbh->prepare(q[
-					INSERT INTO `records` (`zone`, `fqdn`, `type`, `data`, `ttl`)
-					VALUES (?, ?, ?, ?, ?)
-				]);
-			$sth->bind_param(1, $zone);
+
 			for my $rec (@records) {
 				return {failure,
 					msg => "missing attribute"}
@@ -67,7 +62,24 @@ sub update_db {
 				return {failure,
 					msg => "access denied"}
 					unless is_allowed($user, $zone, $rec->{fqdn});
+			}
 
+			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone",
+						"-c", "-z", $zone],
+						\@records);
+			if (!$r->{status}) {
+				return {failure,
+					msg => "invalid zone data",
+					err => join("\n", @{$r->{output}})};
+			}
+
+			my $rows = 0;
+			my $sth = $dbh->prepare(q[
+					INSERT INTO `records` (`zone`, `fqdn`, `type`, `data`, `ttl`)
+					VALUES (?, ?, ?, ?, ?)
+				]);
+			$sth->bind_param(1, $zone);
+			for my $rec (@records) {
 				$sth->bind_param(2, $rec->{fqdn});
 				$sth->bind_param(3, uc $rec->{type});
 				$sth->bind_param(4, $rec->{data});

@@ -13,7 +13,9 @@ use POSIX qw(:sys_wait_h);
 our @EXPORT = qw(
 	failure
 	success
+	spawn_ext
 	rpc_helper_main
+	rpc_ext_main
 	);
 
 sub new {
@@ -33,18 +35,23 @@ sub new {
 
 sub spawn_helper {
 	my ($self, $name, $req) = @_;
-	my (@cmd, $data, $pid, $infd, $outfd, $reply);
 
-	push @cmd, File::Spec->catfile($self->{rpchelperdir} // ".", $name);
-	push @cmd, "--for", $self->{user};
+	my @cmd = (File::Spec->catfile($self->{rpchelperdir} // ".", $name),
+			"--for",
+			$self->{user});
 
-	$req //= {};
-
-	$data = {user => $self->{user},
+	my $data = {user => $self->{user},
 		authuser => $self->{authuser},
-		request => $req};
+		request => $req // {}};
 
-	if ($pid = open2($infd, $outfd, @cmd)) {
+	return spawn_ext(\@cmd, $data);
+}
+
+sub spawn_ext {
+	my ($cmd, $data) = @_;
+	my ($pid, $infd, $outfd, $reply);
+
+	if ($pid = open2($infd, $outfd, @$cmd)) {
 		Cluenet::Rpc::rpc_send_fd($data, $outfd);
 		$outfd->close;
 		$reply = Cluenet::Rpc::rpc_recv_fd($infd);
@@ -52,7 +59,7 @@ sub spawn_helper {
 	} else {
 		$reply = {failure,
 				msg => "internal error",
-				err => "spawn_helper failed to execute '$name'"};
+				err => "spawn_ext failed to execute '${cmd}[0]'"};
 	}
 	return $reply;
 }
@@ -76,6 +83,25 @@ sub rpc_helper_main(&) {
 		$reply //= {failure,
 				msg => "internal error",
 				err => "rpc_helper_main failed"};
+	}
+	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
+}
+
+sub rpc_ext_main(&) {
+	my ($sub) = @_;
+
+	my ($data, $reply);
+	$data = Cluenet::Rpc::rpc_recv_fd(*STDIN);
+
+	$reply = eval {$sub->($data)};
+	if ($@) {
+		chomp $@;
+		$reply = {failure,
+				msg => "internal error: $@"};
+	} else {
+		$reply //= {failure,
+				msg => "internal error",
+				err => "rpc_ext_main failed"};
 	}
 	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
 }
