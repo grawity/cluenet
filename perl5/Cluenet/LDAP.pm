@@ -22,6 +22,9 @@ our @EXPORT = qw(
 	from_dn
 	user_from_dn
 	server_from_dn
+	ldap_connect_auth
+	ldap_connect_anon
+	ldap_errmsg
 	);
 
 my $whoami;
@@ -71,6 +74,17 @@ sub connect_anon {
 		or croak "$!";
 	$ldap->bind;
 	return $ldap;
+}
+
+our $LDAP_CONN_AUTH;
+our $LDAP_CONN_ANON;
+
+sub ldap_connect_auth {
+	return $LDAP_CONN_AUTH //= connect_auth;
+}
+
+sub ldap_connect_anon {
+	return $LDAP_CONN_ANON //= $LDAP_CONN_AUTH // connect_anon;
 }
 
 sub is_group_member {

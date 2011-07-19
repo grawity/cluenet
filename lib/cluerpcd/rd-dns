@@ -1,7 +1,6 @@
 #!/usr/bin/env perl
-use warnings;
-use strict;
-use feature "switch";
+use common::sense;
+use Cluenet::Authz;
 use Cluenet::Common;
 use Cluenet::Rpc;
 use Cluenet::Rpc::Server;
@@ -15,17 +14,27 @@ use constant {
 
 sub DB_PASSWD { read_line(DB_PASSWD_FILE) }
 
+sub canon_fqdn {
+	my $fqdn = lc shift; $fqdn =~ s/\.$//; return $fqdn;
+}
+
 sub in_zone {
-	my $zone = lc shift; $zone =~ s/\.$//;
-	my $fqdn = lc shift; $fqdn =~ s/\.$//;
+	my $zone = canon_fqdn(shift);
+	my $fqdn = canon_fqdn(shift);
 	return ($zone eq $fqdn) || (".$zone" eq substr($fqdn, -length(".$zone")));
 }
 
 sub is_allowed {
-	my ($user, $zone, $fqdn) = @_;
-	return 0 unless in_zone($zone, $fqdn);
-	# TODO: $user has access to $zone
-	return 1;
+	my $user = shift;
+	my $zone = canon_fqdn(shift);
+	my $fqdn = canon_fqdn(shift);
+	in_zone($zone, $fqdn) || return 0;
+	# TODO
+	$user =~ /^grawity$/ && return 1;
+	for my $au (get_user_authorizations($user)) {
+		$au =~ /^dns\^(.+)\.$/ && in_zone($1, $fqdn) && return 1;
+	}
+	return 0;
 }
 
 sub trigger_reload {

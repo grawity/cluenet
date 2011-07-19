@@ -91,8 +91,8 @@ sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
 
 ### LDAP connection
 
-sub connect_auth { Cluenet::LDAP::connect_auth; }
-sub connect_anon { Cluenet::LDAP::connect_anon; }
+sub connect_auth { Cluenet::LDAP::ldap_connect_auth; }
+sub connect_anon { Cluenet::LDAP::ldap_connect_anon; }
 
 # Get and cache LDAP authzid
 sub whoami {
@@ -104,18 +104,6 @@ sub whoami {
 		$my_name =~ s/\@nullroute\.eu\.org$//;
 	}
 	return $my_name;
-}
-
-sub ldap_errmsg {
-	my ($msg, $dn) = @_;
-	my $text = "LDAP error: ".$msg->error."\n";
-	if ($dn) {
-		$text .= "\tfailed: $dn\n";
-	}
-	if ($msg->dn) {
-		$text .= "\tmatched: ".$msg->dn."\n";
-	}
-	$text;
 }
 
 # Call `ldapsearch` to dump raw LDIF
