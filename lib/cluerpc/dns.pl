@@ -3,7 +3,7 @@ use feature "switch";
 
 "dns" => {
 	usage =>
-	"[add|delete|update|delsubdomain]",
+	"[-z zone] {add|delete|update|delsubdomain}",
 
 #	description =>
 #	"update DNS information",
@@ -40,7 +40,15 @@ use feature "switch";
 
 		my $action = shift(@ARGV) // "help";
 
+		check $r = authenticate;
+		check $r = request(cmd => "dns", action => "getzones");
+		my @zones = @{$r->{zones}};
+
 		given ($action) {
+			when ("getzones") {
+				say for @zones;
+			}
+
 			when ("update") {
 				my (@add, @delete);
 
@@ -71,7 +79,6 @@ use feature "switch";
 					}
 				}
 
-				check $r = authenticate;
 				if (@add) {
 					check $r = request(cmd => "dns",
 								action => "validate",
@@ -106,8 +113,8 @@ use feature "switch";
 				unless (defined $rec{fqdn} and defined $rec{type} and defined $rec{data}) {
 					die "Missing fqdn, type and/or data\n";
 				}
+				$rec{fqdn} = dns_qualify($rec{fqdn}, $zone);
 				$rec{ttl} //= 10800;
-				check $r = authenticate;
 				check $r = request(cmd => "dns",
 							action => "add",
 							zone => $zone,
@@ -127,7 +134,7 @@ use feature "switch";
 				unless (defined $rec{fqdn}) {
 					die "Missing fqdn\n";
 				}
-				check $r = authenticate;
+				$rec{fqdn} = dns_qualify($rec{fqdn}, $zone);
 				check $r = request(cmd => "dns",
 							action => "delete",
 							zone => $zone,
@@ -140,7 +147,6 @@ use feature "switch";
 				my @domains = @ARGV;
 
 				return unless @domains;
-				check $r = authenticate;
 				check $r = request(cmd => "dns",
 							action => $action,
 							domains => \@domains);

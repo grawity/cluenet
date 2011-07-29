@@ -4,5 +4,3 @@ DNS management:
 	(mainly for delsubdomain, but also for other cmds)
 
 	server: implement reload trigger
-
-	server: check against LDAP ACLs

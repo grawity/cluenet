@@ -16,6 +16,13 @@ get_user_authorizations($user) -> @authorizedAbilities
 
 sub get_user_authorizations {
 	my ($user) = @_;
+	# TODO
+	my @fake = ();
+	if ($user eq 'grawity') {
+		push @fake,
+			'dns^.';
+	}
+	# TODO
 	my $ldap = ldap_connect_anon();
 	my $dn = user_dn($user);
 	my $res = $ldap->search(base => $dn, scope => "base",

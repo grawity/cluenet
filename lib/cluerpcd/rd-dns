@@ -5,6 +5,7 @@ use Cluenet::Common;
 use Cluenet::Rpc;
 use Cluenet::Rpc::Server;
 use DBI;
+use List::MoreUtils qw(any all);
 
 use constant {
 	DB_HOST		=> "DBI:mysql:host=localhost;database=grawity_cluedns",
@@ -14,25 +15,11 @@ use constant {
 
 sub DB_PASSWD { read_line(DB_PASSWD_FILE) }
 
-sub canon_fqdn {
-	my $fqdn = lc shift; $fqdn =~ s/\.$//; return $fqdn;
-}
-
-sub in_zone {
-	my $zone = canon_fqdn(shift);
-	my $fqdn = canon_fqdn(shift);
-	return ($zone eq $fqdn) || (".$zone" eq substr($fqdn, -length(".$zone")));
-}
-
-sub is_allowed {
-	my $user = shift;
-	my $zone = canon_fqdn(shift);
-	my $fqdn = canon_fqdn(shift);
-	in_zone($zone, $fqdn) || return 0;
-	# TODO
-	$user =~ /^grawity$/ && return 1;
-	for my $au (get_user_authorizations($user)) {
-		$au =~ /^dns\^(.+)\.$/ && in_zone($1, $fqdn) && return 1;
+sub check_acl {
+	my ($user, $domain) = @_;
+	return 1 if $user eq 'grawity';
+	for (get_user_authorizations($user)) {
+		/^dns\^(.+)$/ && dns_match($1, $domain) && return 1;
 	}
 	return 0;
 }
@@ -43,56 +30,58 @@ sub trigger_reload {
 	1;
 }
 
-sub fqdnize(\$$) {
-	my ($domain, $zone) = @_;
-	$$domain =~ /\.$/ or $$domain .= ".".$zone;
-}
-
 sub update_db {
 	my ($dbh, $req, $user) = @_;
 
+	my @zones = map {$_->[0]}
+		@{$dbh->selectall_arrayref(q[SELECT DISTINCT zone FROM records])};
+
 	given ($req->{action}) {
+		when ("getzones") {
+			return {success,
+				zones => \@zones};
+		}
+
 		when ("add") {
 			unless ($req->{zone} and $req->{records}) {
 				return {failure,
 					msg => "missing parameter"};
 			}
 
-			my $zone = lc $req->{zone};
+			my $zone = $req->{zone};
 			my @records = @{$req->{records}};
 
-			for my $rec (@records) {
+			for my $rr (@records) {
 				return {failure,
 					msg => "missing attribute"}
-					unless $rec->{fqdn} && length($rec->{type}) && length($rec->{data});
-
-				fqdnize($rec->{fqdn}, $zone);
-
+					unless all {length} $rr->{fqdn}, $rr->{type}, $rr->{data};
+				return {failure,
+					msg => "unqualified domain"}
+					unless $rr->{fqdn} =~ /\.$/;
+				return {failure,
+					msg => "out-of-zone domain"}
+					unless dns_match($zone, $rr->{fqdn});
 				return {failure,
 					msg => "access denied"}
-					unless is_allowed($user, $zone, $rec->{fqdn});
+					unless check_acl($user, $rr->{fqdn});
 			}
 
-			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone",
-						"-c", "-z", $zone],
-						\@records);
+			# check if data results in valid zone
+			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone", "-cz", $zone], \@records);
 			if (!$r->{status}) {
 				return {failure,
 					msg => "invalid zone data:\n".join("\n", @{$r->{output}})};
 			}
 
+			# insert data
 			my $rows = 0;
 			my $sth = $dbh->prepare(q[
 					INSERT INTO `records` (`zone`, `fqdn`, `type`, `data`, `ttl`)
 					VALUES (?, ?, ?, ?, ?)
 				]);
-			$sth->bind_param(1, $zone);
-			for my $rec (@records) {
-				$sth->bind_param(2, $rec->{fqdn});
-				$sth->bind_param(3, uc $rec->{type});
-				$sth->bind_param(4, $rec->{data});
-				$sth->bind_param(5, $rec->{ttl} // 7200);
-				$rows += $sth->execute;
+			for my $rr (@records) {
+				$rows += $sth->execute($zone, $rr->{fqdn},
+					uc $rr->{type}, $rr->{data}, $rr->{ttl});
 			}
 			$dbh->commit;
 			trigger_reload($zone);
@@ -109,23 +98,26 @@ sub update_db {
 			my $zone = lc $req->{zone};
 			my @records = @{$req->{records}};
 
-			for my $rec (@records) {
+			for my $rr (@records) {
 				return {failure,
 					msg => "missing attribute"}
-					unless $rec->{fqdn} && length($rec->{type}) && length($rec->{data});
-
-				fqdnize($rec->{fqdn}, $zone);
+					unless all {length} $rr->{fqdn}, $rr->{type}, $rr->{data};
+				return {failure,
+					msg => "unqualified domain"}
+					unless $rr->{fqdn} =~ /\.$/;
+				return {failure,
+					msg => "out-of-zone domain"}
+					unless dns_match($zone, $rr->{fqdn});
 			}
 
-			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone",
-						"-c", "-z", $zone],
-						\@records);
+			my $r = spawn_ext(["/cluenet/lib/cluerpcd/cluedns-generate-zone", "-cz", $zone], \@records);
+			my $output = join("\n", @{$r->{output}});
 			if ($r->{status}) {
 				return {success,
-					msg => "zone warnings:\n".join("\n", @{$r->{output}})};
+					msg => "validation status:\n$output\n"};
 			} else {
 				return {failure,
-					msg => "invalid zone data:\n".join("\n", @{$r->{output}})};
+					msg => "invalid zone data:\n$output\n"};
 			}
 		}
 
@@ -137,34 +129,34 @@ sub update_db {
 
 			my $zone = lc $req->{zone};
 			my @records = @{$req->{records}};
-			my %match;
-			my $rows = 0;
-			for my $rec (@records) {
+
+			for my $rr (@records) {
 				return {failure,
 					msg => "missing attribute"}
-					unless $rec->{fqdn};
-
-				fqdnize($rec->{fqdn}, $zone);
-
+					unless length $rr->{fqdn};
 				return {failure,
 					msg => "access denied"}
-					unless is_allowed($user, $zone, $rec->{fqdn});
+					unless check_acl($user, $rr->{fqdn});
+			}
 
+			my %match;
+			my $rows = 0;
+			for my $rr (@records) {
 				$match{zone} = $zone;
-				$match{fqdn} = $rec->{fqdn};
-				if (defined $rec->{type}) {
-					$match{type} = $rec->{type};
-					if (defined $rec->{data}) {
-						$match{data} = $rec->{data};
+				$match{fqdn} = $rr->{fqdn};
+				if (defined $rr->{type}) {
+					$match{type} = $rr->{type};
+					if (defined $rr->{data}) {
+						$match{data} = $rr->{data};
 					}
 				} else {
-					if (defined $rec->{data}) {
+					if (defined $rr->{data}) {
 						return {failure,
 							msg => "missing attribute: 'data' requires 'type'"};
 					}
 				}
-				my $sth = q[DELETE FROM `records` WHERE ].join(" AND ",
-					map {$_." = ".$dbh->quote($match{$_})} keys %match);
+				my $sth = q[DELETE FROM `records` WHERE ]
+					.join(" AND ", map {$_." = ".$dbh->quote($match{$_})} keys %match);
 				$rows += $dbh->do($sth);
 			}
 			$dbh->commit;
@@ -180,15 +172,14 @@ sub update_db {
 			}
 
 			my @domains = @{$req->{domains}};
+			return {failure,
+				msg => "access denied"}
+				unless all {check_acl($user, $_)} @domains;
+
 			my $rows = 0;
-			my $sth = $dbh->prepare(q[
-					DELETE FROM `records`
-					WHERE fqdn = ? OR fqdn LIKE ?
-				]);
+			my $sth = $dbh->prepare(q[DELETE FROM `records` WHERE fqdn = ? OR fqdn LIKE ?]);
 			for my $domain (@domains) {
-				$sth->bind_param(1, $domain);
-				$sth->bind_param(2, '%.'.$domain);
-				$rows += $sth->execute;
+				$rows += $sth->execute($domain, '%.'.$domain);
 			}
 			$dbh->commit;
 			trigger_reload();

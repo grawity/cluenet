@@ -78,6 +78,7 @@ if ($precheck) {
 			print $fh format_rec($rec);
 		}
 		my ($ok, @out) = check_zone($zone, $fh->filename);
+		#chmod(0640, $fh->filename) or
 		unlink($fh->filename);
 		return {$ok ? success : failure,
 			output => \@out};
@@ -87,7 +88,7 @@ else {
 	my $f = fetch_zone($zone)->filename;
 	my ($ok, @out) = check_zone($zone, $f);
 	if ($ok) {
-		rename($f, "newzone");
+		#rename($f, "newzone");
 		exit 0;
 	}
 	else {
