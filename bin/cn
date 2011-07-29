@@ -388,6 +388,7 @@ $commands{"server"} = sub {
 		my $server = get_server_info($_);
 		my $owner = get_user_info($server->{owner}, 1);
 		my @admins = map {get_user_info($_, 1)}
+			grep {!m|/|}
 			@{$server->{authorizedAdministrator}};
 		print_server_info($server, $owner, @admins);
 	}
