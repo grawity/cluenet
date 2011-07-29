@@ -62,10 +62,7 @@ sub connect_auth {
 		or croak "$!";
 	$ldap->start_tls(verify => "require", cafile => "/etc/ssl/certs/Cluenet.pem")
 		or croak "$!";
-	my %cb = (
-		user => \getlogin,
-	);
-	my $sasl = Authen::SASL->new(mech => "GSSAPI", callback => \%cb);
+	my $sasl = Authen::SASL->new(mech => "GSSAPI");
 	my $saslclient = $sasl->client_new("ldap", getfqdn(LDAP_MASTER));
 	my $msg = $ldap->bind(sasl => $saslclient);
 	$msg->code and die "error: ".$sasl->error;
