@@ -71,7 +71,7 @@ sub connect_auth {
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
 	my $saslclient = $sasl->client_new("ldap", dns_canonical(LDAP_MASTER));
 	my $msg = $ldap->bind(sasl => $saslclient);
-	$msg->code and die "error: ".$sasl->error;
+	$msg->code and die "error: ".$msg->error;
 	return $ldap;
 }
 
