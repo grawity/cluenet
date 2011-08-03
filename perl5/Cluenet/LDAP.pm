@@ -58,10 +58,16 @@ sub server_from_dn {
 
 # Establish LDAP connection, authenticated or anonymous
 sub connect_auth {
+	my %opts = @_;
+
 	my $ldap = Net::LDAP->new(LDAP_MASTER)
 		or croak "$!";
-	$ldap->start_tls(verify => "require", cafile => "/etc/ssl/certs/Cluenet.pem")
-		or croak "$!";
+	if ($opts{tls}) {
+		# TODO: is cafile required to be here?
+		$ldap->start_tls(verify => "require",
+			cafile => "/etc/ssl/certs/Cluenet.pem")
+			or croak "$!";
+	}
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
 	my $saslclient = $sasl->client_new("ldap", dns_canonical(LDAP_MASTER));
 	my $msg = $ldap->bind(sasl => $saslclient);
