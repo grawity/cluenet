@@ -31,7 +31,7 @@ my $whoami;
 
 sub user_dn { "uid=".shift().",ou=people,dc=cluenet,dc=org" }
 
-sub server_dn { "cn=".Cluenet::Common::server_fqdn(shift).",ou=servers,dc=cluenet,dc=org" }
+sub server_dn { "cn=".make_server_fqdn(shift).",ou=servers,dc=cluenet,dc=org" }
 
 # Find the next rightmost RDN after given base
 sub from_dn {
@@ -63,7 +63,7 @@ sub connect_auth {
 	$ldap->start_tls(verify => "require", cafile => "/etc/ssl/certs/Cluenet.pem")
 		or croak "$!";
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
-	my $saslclient = $sasl->client_new("ldap", getfqdn(LDAP_MASTER));
+	my $saslclient = $sasl->client_new("ldap", dns_canonical(LDAP_MASTER));
 	my $msg = $ldap->bind(sasl => $saslclient);
 	$msg->code and die "error: ".$sasl->error;
 	return $ldap;

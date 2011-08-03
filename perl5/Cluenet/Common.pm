@@ -11,17 +11,17 @@ use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use User::pwent;
 
 our @EXPORT = qw(
+	dns_canonical
 	dns_match
 	dns_match_zone
 	dns_qualify
-
-	canon_host
 	getfqdn
+	make_server_fqdn
+
 	is_cluenet_user
 	is_valid_user
 	pwgen
 	read_line
-	server_fqdn
 	);
 
 =over
@@ -56,22 +56,73 @@ sub dns_match_zone {
 	return wantarray ? @matches : shift(@matches);
 }
 
-=item dns_qualify($name, $zone) -> $fqdn
+=item dns_qualify($name, $zone, $root=1) -> $fqdn
 
-Qualifies the subgiven DNS $name, which may be "@".
+Qualifies the given DNS $name, which may be "@".
+If $relative, the final dot will not be added (and will be removed if present).
+If $relative > 1, names containing at least that many components will be considered qualified.
+Names ending with a . are always considered qualified.
 
 =cut
 
 sub dns_qualify {
-	my ($domain, $zone, $root) = @_;
-	$root //= 1;
-	if ($root and length($zone) and $zone !~ /\.$/) {
-		$zone .= ".";
+	my ($domain, $zone, $relative) = @_;
+	if ($relative) {
+		$zone =~ s/\.$//;
+		return $zone	if $domain eq '@';
+		return $domain	if $domain =~ s/\.$//;
+		my $ndots = $domain =~ tr/.//;
+		return $domain	if $relative > 1
+			and $relative <= $ndots+1;
+		return $domain	if $zone eq '';
+		return $domain.".".$zone;
+	} else {
+		if (length($zone) and $zone !~ /\.$/) {
+			$zone .= ".";
+		}
+		return $zone	if $domain eq '@';
+		return $domain	if $domain =~ /\.$/;
+		return $domain.".".$zone;
 	}
-	return $zone	if $domain eq '@';
-	return $domain	if $domain =~ /\.$/;
-	return $domain.".".$zone;
 }
+
+=item dns_canonical($name) -> $fqdn
+
+Returns the "canonical name" of a given hostname, according to [reverse] DNS.
+
+=cut
+
+sub dns_canonical {
+	return (gethostbyname(shift // hostname))[0];
+}
+
+=item getfqdn() -> $fqdn
+
+Returns the "canonical name" of current system, according to DNS.
+
+Equivalent to dns_canonical(hostname).
+
+=cut
+
+sub getfqdn {
+	return dns_canonical(hostname);
+}
+
+=item make_server_fqdn($name) -> $fqdn
+
+Converts a Cluenet hostname into a FQDN, appending ".cluenet.org" if necessary,
+ignoring reverse DNS.
+
+=cut
+
+sub make_server_fqdn {
+	my $name = shift;
+	return dns_match("cluenet.org", $name)
+		? dns_qualify($name, "", 1)
+		: dns_qualify($name, "cluenet.org", 1);
+}
+
+# Junk
 
 sub BASEDIR	{ $ENV{CLUENET_DIR} // (-d "/cluenet" ? "/cluenet" : $ENV{HOME}."/cluenet") }
 sub CONFIG_DIR	{ $ENV{CLUENET_CONFIG} // BASEDIR."/etc" }
@@ -104,42 +155,6 @@ sub is_valid_user {
 sub is_cluenet_user {
 	my $pw = getpwnam(shift);
 	return defined $pw and $pw->uid >= 25000;
-}
-
-#
-
-sub getfqdn {
-	return (gethostbyname(shift // hostname))[0];
-}
-
-sub canon_host {
-	carp "canon_host: obsolete, use getfqdn()";
-	my $host = shift // hostname;
-	my %hint = (flags => Socket::GetAddrInfo->AI_CANONNAME);
-	my ($err, @ai) = getaddrinfo($host, "", \%hint);
-	return $err ? $host : ((shift @ai)->{canonname} // $host);
-}
-
-sub lookup_host {
-	carp "lookup_host: obsolete";
-	my ($host) = @_;
-	my @addrs = ();
-	my $r = Net::DNS::Resolver->new;
-
-	my $query = $r->query($host, "A");
-	if ($query) { push @addrs, $_->address for $query->answer }
-
-	$query = $r->query($host, "AAAA");
-	if ($query) { push @addrs, $_->address for $query->answer }
-
-	return @addrs;
-}
-
-sub server_fqdn {
-	carp "server_fqdn: obsolete";
-	# TODO: hack dns_qualify to not return final dot?
-	my ($host) = @_;
-	return ($host =~ /\./) ? $host : "$host.cluenet.org";
 }
 
 1;

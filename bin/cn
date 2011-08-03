@@ -63,14 +63,14 @@ sub format_address {
 # Split "host/service" arg
 sub to_hostservice {
 	my ($host, $service, $rest) = split /\//, shift, 3;
-	return (server_fqdn($host), $service, $rest);
+	return (make_server_fqdn($host), $service, $rest);
 }
 sub to_hostservice_safe {
 	my ($host, $service, $rest) = split /\//, shift, 3;
 	unless ($host and $service) {
 		die "syntax error: empty host or service: '$host/$service'\n";
 	}
-	return (server_fqdn($host), $service, $rest);
+	return (make_server_fqdn($host), $service, $rest);
 }
 
 sub str_bool {
@@ -504,7 +504,7 @@ $commands{"server:create"} = sub {
 	%entry = (
 		objectClass => ["server", "ipHost",
 			"authorizedServiceObject", "serviceRequirementObject"],
-		cn => server_fqdn($host),
+		cn => make_server_fqdn($host),
 		owner => user_dn($owner),
 		isOfficial => "FALSE",
 		userAccessible => "TRUE",
@@ -550,7 +550,7 @@ $commands{"server:delete"} = sub {
 	$ldap = connect_auth;
 	for (@_) {
 		my ($host, $dn, $res, @children, $subdn, $num);
-		$host = server_fqdn($_);
+		$host = make_server_fqdn($_);
 		$dn = server_dn($host);
 		print "Deleting server: $host\n";
 

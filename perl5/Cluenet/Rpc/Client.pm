@@ -11,6 +11,7 @@ use Cluenet::Common;
 use Cluenet::Kerberos;
 use Cluenet::Rpc;
 use IO::Handle;
+use Sys::Hostname;
 
 use constant {
 	RPC_PORT	=> 10875,
@@ -36,7 +37,7 @@ sub new {
 sub connect {
 	use IO::Socket::INET6;
 	my ($self, $addr, $port) = @_;
-	$addr //= getfqdn;
+	$addr //= hostname;
 	$port //= RPC_PORT;
 
 	my $sock = IO::Socket::INET6->new(
