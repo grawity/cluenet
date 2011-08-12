@@ -14,7 +14,6 @@ my $verbose;
 
 my @agentkeys;
 my $rpc;
-my $r;
 
 sub sshagent_list {
 	my (@list, $fh);
@@ -57,13 +56,13 @@ sub sshagent_add {
 
 sub ks_import {
 	my ($name) = @_;
-	check $r = $rpc->request(cmd => "keystore", action => "get", name => $name);
-	sshagent_add($name, $r->{data});
+	my $reply = $rpc->keystore(action => "get", name => $name);
+	sshagent_add($name, $reply->{data});
 }
 
 sub ks_list {
-	check $r = $rpc->request(cmd => "keystore", action => "list");
-	map {$_->{name}} @{$r->{items}};
+	my $reply = $rpc->keystore(action => "list");
+	map {$_->{name}} @{$reply->{items}};
 }
 
 if (!defined $ENV{SSH_AUTH_SOCK}) {
@@ -79,8 +78,9 @@ GetOptions(
 
 $rpc = Cluenet::Rpc::Client->new;
 $rpc->{verbose} = $verbose;
+$rpc->{die_on_failure} = 1;
 $rpc->connect($host);
-check $r = $rpc->authenticate();
+$rpc->authenticate;
 
 if (@ARGV) {
 	ks_import($_) for @ARGV;
