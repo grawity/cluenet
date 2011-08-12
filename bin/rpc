@@ -112,7 +112,7 @@ given ($cmd) {
 			say "";
 			for my $cmd (sort keys %commands) {
 				my $cinfo = $commands{$cmd};
-				if (grep {!($_ ~~ @{$r->{commands}})} @{$cinfo->{requires}}) {
+				if (grep {!($_ ~~ @{$r->{functions}})} @{$cinfo->{requires}}) {
 					next;
 				}
 				if (defined $cinfo->{usage}) {

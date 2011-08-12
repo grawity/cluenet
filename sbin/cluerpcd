@@ -22,7 +22,7 @@ use constant {
 	HELPER_DIR	=> "/cluenet/lib/cluerpcd",
 };
 
-my %commands;
+my %functions;
 my $conffile;
 my $config;
 my $server;
@@ -80,9 +80,9 @@ my %callbacks = (
 	},
 );
 
-## RPC commands
+## RPC functions
 
-$commands{"auth"} = sub {
+$functions{"auth"} = sub {
 	my ($state, $req) = @_;
 	my ($auth, $response, $challenge);
 
@@ -145,18 +145,17 @@ $commands{"auth"} = sub {
 	}
 };
 
-$commands{"list"} = sub {
+$functions{"list"} = sub {
 	my @cmds = map {basename($_, ".pl")} glob(COMMAND_DIR."/*.pl");
-	push @cmds, keys %commands;
+	push @cmds, keys %functions;
 	return {success,
-		commands => [sort @cmds]};
+		functions => [sort @cmds]};
 };
 
-
-sub get_command {
+sub load_func {
 	my $name = shift;
 	return undef unless $name =~ /^\w+$/;
-	return $commands{$name} if defined $commands{$name};
+	return $functions{$name} if defined $functions{$name};
 
 	my $file = COMMAND_DIR."/".$name.".pl";
 	if (-f $file) {
@@ -180,7 +179,7 @@ sub handle_request {
 		return {failure, msg => "missing function"};
 	}
 
-	my $handler = get_command($func);
+	my $handler = load_func($func);
 	if (!defined $handler) {
 		return {failure, msg => "invalid function: '$func'"};
 	}
