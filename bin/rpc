@@ -107,7 +107,7 @@ given ($cmd) {
 			die "Unknown command '$cmd'.\n";
 		}
 		else {
-			check $r = request(cmd => "list");
+			$r = $rpc->list;
 			say "Usage:";
 			say "";
 			for my $cmd (sort keys %commands) {
