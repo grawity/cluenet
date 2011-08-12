@@ -16,7 +16,7 @@ my %commands;
 my $debug;
 my $host;
 my $port;
-my $rpc;
+our $rpc;
 our $user;
 my $verbose;
 my $yes;
@@ -37,7 +37,7 @@ sub confirm {
 }
 
 sub authenticate	{ $rpc->authenticate(@_); }
-sub request		{ $rpc->request(@_); }
+sub request		{ $rpc->call(shift, {@_}); }
 
 $user = getlogin;
 $host = undef;
@@ -73,6 +73,7 @@ $rpc->{callbacks} = {
 };
 $rpc->{verbose} = $verbose;
 $rpc->{debug} = $debug;
+$rpc->{die_on_failure} = 1;
 
 $rpc->connect($host, $port);
 
@@ -127,17 +128,17 @@ given ($cmd) {
 		}
 	}
 	when ("raw") {
-		check $r = authenticate;
+		$rpc->authenticate;
 		print "perl: ";
 		while (<STDIN>) {
-			my %args = eval $_;
-			$r = request(%args);
+			my ($func, %args) = eval $_;
+			$r = $rpc->call($func, %args);
 			print Data::Dumper->Dump([$r], ["Reply"]);
 			print "perl: ";
 		}
 	}
 	when (defined $commands{$cmd}) {
-		$commands{$cmd}{command}->($cmd, $rpc);
+		$commands{$cmd}{command}->();
 	}
 	default {
 		die "Unknown command '$cmd'.\n";

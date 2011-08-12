@@ -1,5 +1,7 @@
 #!perl
 package Cluenet::Rpc;
+# ClueRPC transport layer
+
 use warnings;
 use strict;
 use base "Exporter";
@@ -18,15 +20,6 @@ our @EXPORT = qw(
 	rpc_decode
 	);
 
-sub failure { status => 0 }
-sub success { status => 1 }
-
-sub rpc_encode { encode_json(shift // {}); }
-sub rpc_decode { decode_json(shift || '{}'); }
-
-sub b64_encode { MIME::Base64::encode_base64(shift // "", "") }
-sub b64_decode { MIME::Base64::decode_base64(shift // "") }
-
 =protocol
 
 Basic structure:
@@ -39,11 +32,25 @@ If negotiated during authentication, data is encrypted using sasl_encode().
 
 Data is a JSON-encoded hash.
 
-	* Requests always have "cmd" set to the command name.
-	* Replies always have "status" set to 1 (success) or 0 (failure).
-	* Failure replies normally have "msg" set to a short description.
+	Requests:
+		[$funcname, {%args}]
+	
+	Success replies:
+		{status => 1, %data}
+	
+	Failure replies:
+		{status => 0, msg => "description"}
 
 =cut
+
+sub failure { success => 0 }
+sub success { success => 1 }
+
+sub rpc_encode { encode_json(shift // {}); }
+sub rpc_decode { decode_json(shift || '{}'); }
+
+sub b64_encode { MIME::Base64::encode_base64(shift // "", "") }
+sub b64_decode { MIME::Base64::decode_base64(shift // "") }
 
 # send/receive binary data
 
@@ -103,6 +110,8 @@ sub rpc_recv {
 	$self->{debug} and warn "RECV: $buf\n";
 	return rpc_decode($buf);
 }
+
+# send/receive Perl objects over stdio
 
 sub rpc_send_fd {
 	my ($data, $fd) = @_;

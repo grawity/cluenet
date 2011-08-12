@@ -40,9 +40,9 @@ use feature "switch";
 
 		my $action = shift(@ARGV) // "help";
 
-		check $r = authenticate;
-		check $r = request(cmd => "dns", action => "getzones");
-		my @zones = @{$r->{zones}};
+		$rpc->authenticate;
+		my $reply = $rpc->manage_dns(action => "getzones");
+		my @zones = @{$reply->{zones}};
 
 		given ($action) {
 			when ("getzones") {
@@ -80,24 +80,21 @@ use feature "switch";
 				}
 
 				if (@add) {
-					check $r = request(cmd => "dns",
-								action => "validate",
-								zone => $zone,
-								records => \@add);
+					$rpc->manage_dns(action => "validate",
+							zone => $zone,
+							records => \@add);
 				}
 				if (@delete) {
-					check $r = request(cmd => "dns",
-								action => "delete",
-								zone => $zone,
-								records => \@delete);
-					$quiet || say $r->{count}." records deleted.";
+					$reply = $rpc->manage_dns(action => "delete",
+							zone => $zone,
+							records => \@delete);
+					$quiet || say $reply->{count}." records deleted.";
 				}
 				if (@add) {
-					check $r = request(cmd => "dns",
-								action => "add",
-								zone => $zone,
-								records => \@add);
-					$quiet || say $r->{count}." records added.";
+					$reply = $rpc->manage_dns(action => "add",
+							zone => $zone,
+							records => \@add);
+					$quiet || say $reply->{count}." records added.";
 				}
 			}
 
@@ -115,12 +112,11 @@ use feature "switch";
 				}
 				$rec{fqdn} = dns_qualify($rec{fqdn}, $zone);
 				$rec{ttl} //= 10800;
-				check $r = request(cmd => "dns",
-							action => "add",
-							zone => $zone,
-							records => [\%rec]);
+				$reply = $rpc->manage_dns(action => "add",
+						zone => $zone,
+						records => [\%rec]);
 
-				$quiet || say $r->{count}." records added.";
+				$quiet || say $reply->{count}." records added.";
 			}
 
 			when ("delete") {
@@ -135,23 +131,21 @@ use feature "switch";
 					die "Missing fqdn\n";
 				}
 				$rec{fqdn} = dns_qualify($rec{fqdn}, $zone);
-				check $r = request(cmd => "dns",
-							action => "delete",
-							zone => $zone,
-							records => [\%rec]);
+				$reply = $rpc->manage_dns(action => "delete",
+						zone => $zone,
+						records => [\%rec]);
 
-				$quiet || say $r->{count}." records deleted.";
+				$quiet || say $reply->{count}." records deleted.";
 			}
 
 			when ("delsubdomain") {
 				my @domains = @ARGV;
 
 				return unless @domains;
-				check $r = request(cmd => "dns",
-							action => $action,
-							domains => \@domains);
+				$reply = $rpc->manage_dns(action => "delsubdomain",
+						domains => \@domains);
 
-				$quiet || say $r->{count}." records deleted.";
+				$quiet || say $reply->{count}." records deleted.";
 			}
 
 			default {

@@ -4,11 +4,6 @@ use feature "switch";
 "reset_password" => sub {
 	my ($self, $req) = @_;
 
-	unless ($self->{authed}) {
-		return {failure,
-			msg => "access denied"};
-	}
-
 	my %services = (
 		mysql => sub {
 			my $data = {user => $self->{user}, ifexists => 1};
@@ -18,6 +13,11 @@ use feature "switch";
 			return $self->spawn_helper("rd-smbpasswd");
 		},
 	);
+
+	unless ($self->{authed}) {
+		return {failure,
+			msg => "access denied"};
+	}
 
 	my $svc = $req->{service};
 
@@ -34,6 +34,6 @@ use feature "switch";
 	}
 	else {
 		return {failure,
-			msg => "unknown service"};
+			msg => "unknown service: '$svc'"};
 	}
 };

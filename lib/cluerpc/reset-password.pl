@@ -12,27 +12,27 @@ use feature "say";
 
 	command =>
 	sub {
-		### TODO ### get services from remote
-		my @services = qw(mysql samba);
+		$rpc->authenticate;
+		my $reply = $rpc->reset_password(service => "");
+		my @services = @{$reply->{services}};
 
 		my $service = shift(@ARGV);
 		if (defined $service) {
-			confirm "Reset $service password for '\033[1m${user}\033[m'?";
-
-			check $r = authenticate;
-			check $r = request(cmd => "reset_password", service => $service);
-			say "Password for '$r->{account}{username}' has been reset.";
-			say "";
-			say "New password:\t".$r->{account}{password};
-			say "";
-			if ($r->{msg}) {
-				say $r->{msg};
+			confirm "Reset $service password for '\033[1m$user\033[m'?";
+			$r = $rpc->reset_password(service => $service);
+			if (exists $reply->{account}{password}) {
+				say "Password for '$reply->{account}{username}' has been reset.";
+				say "";
+				say "New password:\t".$reply->{account}{password};
+				say "";
+			}
+			if (exists $reply->{msg}) {
+				say $reply->{msg};
 				say "";
 			}
 		} else {
-			check $r = authenticate;
-			check $r = request(cmd => "reset_password", service => "");
-			say "Supported services: ", join(", ", @{$r->{services}});
+			warn "Error: service not specified\n";
+			say "Services: ", join(", ", @services);
 		}
 	},
 };

@@ -4,7 +4,7 @@
 
 	command =>
 	sub {
-		check $r = authenticate;
-		check $r = request(cmd => "noop");
+		$rpc->authenticate;
+		$rpc->noop;
 	},
 };

@@ -7,6 +7,7 @@ use feature "switch";
 use base "Cluenet::Rpc";
 use base "Exporter";
 use Authen::SASL;
+use Carp;
 use Cluenet::Common;
 use Cluenet::Kerberos;
 use Cluenet::Rpc;
@@ -20,7 +21,6 @@ use constant {
 
 our @EXPORT = qw(
 	RPC_PORT
-	check
 	);
 
 sub new {
@@ -33,6 +33,8 @@ sub new {
 	};
 	bless $self, shift;
 }
+
+sub DESTROY {}
 
 sub connect {
 	use IO::Socket::INET6;
@@ -52,74 +54,69 @@ sub connect {
 	$self->{host} = $addr;
 }
 
-sub request {
-	my $self = shift;
-	$self->rpc_send(ref $_[0] ? $_[0] : {@_});
-	my $reply = $self->rpc_recv;
-	if ($self->{die_on_failure}) {
-		check $reply;
+sub rpc_call {
+	my ($self, $func, %args) = @_;
+	$self->rpc_send([$func, \%args]);
+	return $self->rpc_recv;
+}
+
+sub call {
+	my ($self, $func, %args) = @_;
+	my $reply = $self->rpc_call($func, %args);
+
+	if ($self->{die_on_failure} && !$reply->{success}) {
+		if ($reply->{err}) {
+			chomp(my $err = join("\n", $reply->{err}));
+			warn "$err\n";
+		}
+		die "\033[1;31mError: ".($reply->{msg} // "unknown error")."\033[m\n";
 	}
+
 	return $reply;
 }
 
-sub check {
-	my $r = shift;
-	if (!$r->{status}) {
-		if ($r->{error}) {
-			chomp(my $err = join("\n", $r->{error}));
-			warn "$err\n";
-		}
-		die "\033[1;31mError: ".($r->{msg} // "unknown error")."\033[m\n";
+sub AUTOLOAD {
+	my ($self, @args) = @_;
+	my ($name) = $Cluenet::Rpc::Client::AUTOLOAD =~ /.+::(.+?)$/;
+	if ($self->{debug}) {
+		warn "AUTOLOAD: $Cluenet::Rpc::Client::AUTOLOAD -> $name\n";
 	}
+	$self->call($name, @args);
 }
 
 sub authenticate {
 	my ($self, $mech) = @_;
+
+	if (defined $self->{sasl}) {
+		return $self->{authreply};
+	}
+
 	$mech //= "GSSAPI";
-
 	given (uc $mech) {
-		when ("GSSAPI") {
-			krb5_ensure_tgt;
-		}
+		krb5_ensure_tgt when "GSSAPI";
 	}
 
-	my $reply = $self->_sasl_step($mech);
-	until (defined $reply->{status}) {
-		$reply = $self->_sasl_step($reply->{data});
+	my $sasl = Authen::SASL->new(mech => $mech, callback => $self->{callbacks});
+	$self->{sasl} = $sasl->client_new(SASL_SERVICE, $self->{host});
+
+	my $reply = $self->call("auth",
+		mech => $self->{sasl}->mechanism,
+		data => b64_encode($self->{sasl}->client_start));
+
+	while (exists $reply->{data}) {
+		my $challenge = b64_decode($reply->{data});
+		$reply = $self->call("auth",
+			data => b64_encode($self->{sasl}->client_step($challenge)));
 	}
-	if ($reply->{status}) {
+
+	if ($reply->{success}) {
 		$self->{seal} = 1;
+		$self->{authreply} = $reply;
 		if ($self->{verbose}) {
 			warn "\033[32mAuthenticated as $reply->{authuser} (authorized for $reply->{user})\033[m\n";
 		}
 	}
 	return $reply;
-}
-
-sub _sasl_step {
-	my $self = shift;
-	my $req;
-	if (!defined $self->{sasl}) {
-		my $mech = shift;
-		$self->{sasl} = Authen::SASL->new(
-					mech => $mech,
-					callback => $self->{callbacks},
-				)->client_new(SASL_SERVICE, $self->{host});
-
-		$req = {cmd => "auth"};
-		$req->{mech} = $self->{sasl}->mechanism;
-		$req->{data} = b64_encode($self->{sasl}->client_start);
-	}
-	else {
-		my $data = b64_decode(shift);
-		$req = {cmd => "auth"};
-		$req->{data} = b64_encode($self->{sasl}->client_step($data));
-	}
-
-	if ($self->{sasl}->code < 0) {
-		return {failure, msg => ($self->{sasl}->error)[1]};
-	}
-	return $self->request($req);
 }
 
 1;

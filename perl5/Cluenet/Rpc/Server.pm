@@ -58,8 +58,7 @@ sub spawn_ext {
 		waitpid($pid, WNOHANG);
 	} else {
 		$reply = {failure,
-				msg => "internal error",
-				err => "spawn_ext failed to execute '${cmd}[0]'"};
+			msg => "internal error: spawn_ext failed to execute '${cmd}[0]'"};
 	}
 	return $reply;
 }
@@ -78,11 +77,10 @@ sub rpc_helper_main(&) {
 	if ($@) {
 		chomp $@;
 		$reply = {failure,
-				msg => "internal error: $@"};
+			msg => "internal error: $@"};
 	} else {
 		$reply //= {failure,
-				msg => "internal error",
-				err => "rpc_helper_main failed"};
+			msg => "internal error: rpc_helper_main failed"};
 	}
 	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
 }
@@ -97,11 +95,10 @@ sub rpc_ext_main(&) {
 	if ($@) {
 		chomp $@;
 		$reply = {failure,
-				msg => "internal error: $@"};
+			msg => "internal error: $@"};
 	} else {
 		$reply //= {failure,
-				msg => "internal error",
-				err => "rpc_ext_main failed"};
+			msg => "internal error: rpc_ext_main failed"};
 	}
 	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
 }

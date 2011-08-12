@@ -124,10 +124,11 @@ $commands{"auth"} = sub {
 
 	if (++$state->{saslsteps} >= 50) {
 		return {failure,
-			msg => "internal error"};
+			msg => "internal error: infinite loop"};
 	}
 	elsif ($state->{sasl}->need_step) {
-		return {data => b64_encode($challenge)};
+		return {success,
+			data => b64_encode($challenge)};
 	}
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
@@ -172,19 +173,21 @@ sub get_command {
 }
 
 sub handle_request {
-	my ($state, $req) = @_;
-	if (!defined $req->{cmd}) {
-		return {failure, msg => "missing command name"};
+	my ($server, $req) = @_;
+
+	my ($func, $args) = @$req;
+	if (!defined $func) {
+		return {failure, msg => "missing function"};
 	}
 
-	my $cmd = get_command($req->{cmd});
-	if (!defined $cmd) {
-		return {failure, msg => "invalid command"};
+	my $handler = get_command($func);
+	if (!defined $handler) {
+		return {failure, msg => "invalid function: '$func'"};
 	}
 
-	my $reply = eval { $cmd->($state, $req) };
+	my $reply = eval {$handler->($server, $args)};
 	if ($@) {
-		return {failure, msg => "$@"};
+		return {failure, msg => "internal error: $@"};
 	} else {
 		return $reply;
 	}

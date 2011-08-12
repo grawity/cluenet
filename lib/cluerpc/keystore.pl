@@ -14,20 +14,19 @@ use feature "switch";
 	command =>
 	sub {
 		my $action = shift(@ARGV);
-		given ($action // "ls") {
-			when ("ls") {
-				check $r = authenticate;
-				check $r = request(cmd => "keystore", action => "list");
-				for my $e (@{$r->{items}}) {
-					say $e->{name};
+		$rpc->authenticate;
+		given ($action // "list") {
+			when (["list", "ls"]) {
+				my $reply = $rpc->keystore(action => "list");
+				for my $item (@{$reply->{items}}) {
+					say $item->{name};
 				}
 			}
 			when ("get") {
-				my $name = shift(@ARGV);
-				check $r = authenticate;
-				check $r = request(cmd => "keystore",
-							action => "get", name => $name);
-				print $r->{data};
+				for (@ARGV) {
+					my $reply = $rpc->keystore(action => "get", name => $_);
+					print $reply->{data};
+				}
 			}
 			when ("put") {
 				my $name = shift(@ARGV);
@@ -39,22 +38,15 @@ use feature "switch";
 						die "$!\n";
 					}
 				}
-
-				check $r = authenticate;
-				check $r = request(cmd => "keystore",
-							action => "put", name => $name, data => $buf);
+				$rpc->keystore(action => "put", name => $name, data => $buf);
 			}
 			when (["rename", "mv"]) {
-				check $r = authenticate;
 				my ($name, $to) = @ARGV;
-				check $r = request(cmd => "keystore", action => "rename",
-						name => $name, to => $to);
+				$rpc->keystore(action => "rename", name => $name, to => $to);
 			}
 			when (["delete", "rm"]) {
-				check $r = authenticate;
 				for (@ARGV) {
-					check $r => request(cmd => "keystore",
-							action => "delete", name => $_);
+					$rpc->keystore(action => "delete", name => $_);
 				}
 			}
 			default {
