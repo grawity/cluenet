@@ -108,13 +108,15 @@ $functions{"auth"} = sub {
 				return {failure,
 					msg => "unsupported mechanism"};
 			}
-			$state->{seal_wanted} = $req->{seal} // 1;
-			$sasl = Authen::SASL->new(mechanism => $req->{mech},
+			my $sasl = Authen::SASL->new(mechanism => $req->{mech},
 					# ugly hack to pass $state (really $state->{sasl}) to callbacks
 					callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks});
-			$conn = $sasl->server_new(SASL_SERVICE, getfqdn);
+			my $conn = $sasl->server_new(SASL_SERVICE, getfqdn);
+
 			$state->{sasl} = $conn;
 			$state->{saslsteps} = 0;
+			$state->{seal_wanted} = $req->{seal} // 1;
+
 			$challenge = $state->{sasl}->server_start(grep {length} $response);
 		}
 		else {
