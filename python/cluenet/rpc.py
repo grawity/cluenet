@@ -6,28 +6,45 @@ import sys
 def encode(obj):
 	return json.dumps(obj)
 
-def decode(obj):
-	return json.loads(obj or "{}")
+def decode(buf):
+	return json.loads(buf or "{}")
 
-def send_packed(fd, buf):
-	fd.write("!rpc%04x" % len(buf))
-	fd.write(buf)
-	fd.flush()
+class Rpc():
+	def __init__(self, rfd=None, wfd=None):
+		self.rfd = rfd or sys.stdin
+		self.wfd = wfd or rfd or sys.stdout
 
-def recv_packed(fd):
-	buf = fd.read(8)
-	if len(buf) != 8:
-		raise IOError("Connection closed while reading")
-	if buf[:4] != "!rpc":
-		raise IOError("Invalid RPC magic")
-	length = int(buf[4:8], 16)
-	buf = fd.read(length)
-	if len(buf) != length:
-		raise IOError("Connection closed while reading")
-	return buf
+	def rpc_send_packed(self, buf):
+		self.wfd.write("!rpc%04x" % len(buf))
+		self.wfd.write(buf)
+		self.wfd.flush()
 
-def send_fd(obj, fd=None):
-	return send_packed(fd or sys.stdout, encode(obj))
+	def rpc_recv_packed(self):
+		buf = self.rfd.read(8)
+		if len(buf) != 8:
+			raise IOError("Connection closed while reading")
+		try:
+			if buf[:4] != "!rpc": raise ValueError
+			length = int(buf[4:8], 16)
+		except:
+			buf += self.rfd.read(502)
+			self.wfd.write("Protocol mismatch\n")
+			self.close()
+			raise IOError("Protocol mismatch: received %r" % buf)
+		buf = self.rfd.read(length)
+		if len(buf) != length:
+			raise IOError("Connection closed while reading")
+		return buf
 
-def recv_fd(fd=None):
-	return decode(recv_packed(fd or sys.stdin))
+	def rpc_send(self, obj):
+		buf = encode(obj)
+		self.rpc_send_packed(buf)
+
+	def rpc_recv(self):
+		buf = self.rpc_recv_packed()
+		return decode(buf)
+
+	def close(self):
+		self.wfd.flush()
+		self.wfd.close()
+		self.rfd.close()
