@@ -56,9 +56,9 @@ sub spawn_ext {
 
 	if ($pid = open2($rfd, $wfd, @$cmd)) {
 		my $ext = Cluenet::Rpc->new($rfd, $wfd);
-		$ext->send($data);
+		$ext->rpc_send($data);
 		$wfd->close;
-		$reply = $ext->recv;
+		$reply = $ext->rpc_recv;
 		waitpid($pid, WNOHANG);
 	} else {
 		$reply = {failure,
@@ -71,8 +71,8 @@ sub rpc_helper_main(&) {
 	my ($sub) = @_;
 
 	my ($data, @args, $reply);
-
-	$data = Cluenet::Rpc::rpc_recv_fd(*STDIN);
+	my $parent = Cluenet::Rpc->new;
+	$data = $parent->rpc_recv;
 	push @args, $data->{request};
 	push @args, $data->{user} // $data->{authuser};
 	push @args, $data->{authuser};
@@ -86,14 +86,15 @@ sub rpc_helper_main(&) {
 		$reply //= {failure,
 			msg => "internal error: rpc_helper_main failed"};
 	}
-	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
+	$parent->rpc_send($reply);
 }
 
 sub rpc_ext_main(&) {
 	my ($sub) = @_;
 
 	my ($data, $reply);
-	$data = Cluenet::Rpc::rpc_recv_fd(*STDIN);
+	my $parent = Cluenet::Rpc->new;
+	$data = $parent->rpc_recv;
 
 	$reply = eval {$sub->($data)};
 	if ($@) {
@@ -104,7 +105,7 @@ sub rpc_ext_main(&) {
 		$reply //= {failure,
 			msg => "internal error: rpc_ext_main failed"};
 	}
-	Cluenet::Rpc::rpc_send_fd($reply, *STDOUT);
+	$parent->rpc_send($reply);
 }
 
 1;
