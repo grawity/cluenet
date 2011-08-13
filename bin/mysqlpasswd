@@ -11,7 +11,7 @@ use constant {
 };
 
 sub usage {
-	say "Usage: mysqlpasswd [-h host] [--ssl]";
+	say "Usage: mysqlpasswd [-h|--host <host>] [-s|-ssl] [<username>]";
 	exit 2;
 }
 
