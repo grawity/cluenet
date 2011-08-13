@@ -108,6 +108,7 @@ $functions{"auth"} = sub {
 				return {failure,
 					msg => "unsupported mechanism"};
 			}
+			$state->{seal_wanted} = $req->{seal} // 1;
 			$state->{saslsteps} = 0;
 			$state->{sasl} = Authen::SASL->new(
 				mechanism => $req->{mech},
@@ -132,7 +133,7 @@ $functions{"auth"} = sub {
 	}
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
-		$state->{seal_next} = 1;
+		$state->{seal_next} = $state->{seal_wanted};
 		return {success,
 			user => $state->{user},
 			authuser => $state->{authuser}};
