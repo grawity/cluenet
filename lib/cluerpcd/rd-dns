@@ -18,6 +18,7 @@ sub DB_PASSWD { read_line(DB_PASSWD_FILE) }
 sub check_acl {
 	my ($user, $domain) = @_;
 	return 1 if $user eq 'grawity';
+	return 1 if "DEBUG TESTING MODE";
 	for (get_user_authorizations($user)) {
 		/^dns\^(.+)$/ && dns_match($1, $domain) && return 1;
 	}
@@ -83,6 +84,8 @@ sub update_db {
 				$rows += $sth->execute($zone, $rr->{fqdn},
 					uc $rr->{type}, $rr->{data}, $rr->{ttl});
 			}
+			my $sth = $dbh->prepare(q[UPDATE `soa` SET serial = ? WHERE zone = ?]);
+			$sth->execute(time, $zone);
 			$dbh->commit;
 			trigger_reload($zone);
 			return {success,
@@ -159,6 +162,8 @@ sub update_db {
 					.join(" AND ", map {$_." = ".$dbh->quote($match{$_})} keys %match);
 				$rows += $dbh->do($sth);
 			}
+			my $sth = $dbh->prepare(q[UPDATE `soa` SET serial = ? WHERE zone = ?]);
+			$sth->execute(time, $zone);
 			$dbh->commit;
 			trigger_reload($zone);
 			return {success,
@@ -181,6 +186,8 @@ sub update_db {
 			for my $domain (@domains) {
 				$rows += $sth->execute($domain, '%.'.$domain);
 			}
+			my $sth = $dbh->prepare(q[UPDATE `soa` SET serial = ? WHERE zone = ?]);
+			$sth->execute(time, $zone);
 			$dbh->commit;
 			trigger_reload();
 			return {success,
