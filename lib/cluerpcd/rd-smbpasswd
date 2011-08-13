@@ -9,6 +9,7 @@ use IO::Handle;
 sub reset_password {
 	my $user = shift;
 	my $pw = pwgen();
+	my $fqdn = getfqdn;
 
 	open my $fd, "|-", ("sudo", "smbpasswd", "-L", "-s", "-a", $user)
 		or return {failure,
@@ -26,7 +27,7 @@ sub reset_password {
 			account => {
 				username => $user,
 				password => $pw},
-			msg => "Use 'smbpasswd' to change your password."};
+			msg => "Use 'smbpasswd' or 'smbpasswd -r $fqdn' to change your password."};
 	}
 }
 
