@@ -19,7 +19,7 @@ use feature "say";
 		my $service = shift(@ARGV);
 		if (defined $service) {
 			confirm "Reset $service password for '\033[1m$user\033[m'?";
-			$r = $rpc->reset_password(service => $service);
+			$reply = $rpc->reset_password(service => $service);
 			if (exists $reply->{account}{password}) {
 				say "Password for '$reply->{account}{username}' has been reset.";
 				say "";
