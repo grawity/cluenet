@@ -102,7 +102,8 @@ sub rpc_recv {
 	my ($self) = @_;
 	my $buf = $self->rpc_recv_packed;
 	if (!defined $buf) {
-		return {failure, msg => "connection closed while reading"};
+		#return {failure, msg => "connection closed while reading"};
+		return undef;
 	}
 	if ($self->{seal}) {
 		$buf = $self->{sasl}->decode($buf);
