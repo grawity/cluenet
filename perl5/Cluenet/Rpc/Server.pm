@@ -62,7 +62,7 @@ sub spawn_ext {
 		waitpid($pid, WNOHANG);
 	} else {
 		$reply = {failure,
-			msg => "internal error: spawn_ext failed to execute '$cmd[0]'"};
+			msg => "internal error: spawn_ext failed to execute '${cmd}[0]'"};
 	}
 	return $reply;
 }
