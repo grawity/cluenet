@@ -1,12 +1,9 @@
 #!perl
 package Cluenet::Rpc::Client;
-use warnings;
-use strict;
-use feature "say";
-use feature "switch";
-use base "Cluenet::Rpc";
-use base "Exporter";
-use Authen::SASL;
+use parent 'Cluenet::Rpc';
+use parent 'Exporter';
+use common::sense;
+use Authen::SASL "XS";
 use Carp;
 use Cluenet::Common;
 use Cluenet::Kerberos;
@@ -19,19 +16,19 @@ use constant {
 	SASL_SERVICE	=> "host",
 };
 
-our @EXPORT = qw(
-	RPC_PORT
-	);
-
 sub new {
-	my $self = {
-		callbacks	=> {
-			user => sub { getlogin },
-		},
-		debug		=> $ENV{DEBUG} // 0,
-		die_on_failure	=> 0,
-	};
-	bless $self, shift;
+	my $class = shift;
+	my $self = $class->SUPER::new(@_);
+	$self->{raise} = 0;
+	$self->{user} = undef;
+	return $self;
+}
+
+sub AUTOLOAD {
+	our $AUTOLOAD;
+	my ($self, @args) = @_;
+	my ($name) = $AUTOLOAD =~ /.+::(.+?)$/;
+	$self->call($name, @args);
 }
 
 sub DESTROY {}
@@ -40,18 +37,16 @@ sub connect {
 	use IO::Socket::INET6;
 	my ($self, $addr, $port) = @_;
 	$addr //= hostname;
-	$port //= RPC_PORT;
-
+	$port ||= RPC_PORT;
 	my $sock = IO::Socket::INET6->new(
 			PeerAddr => $addr,
 			PeerPort => $port,
 			Proto => "tcp")
-		or die "connect($addr, $port) failed: $!\n";
-
+		or die "RPC: connect($addr, $port) failed: $!\n";
 	$sock->autoflush(0);
-	$self->{infd} = $sock;
-	$self->{outfd} = $sock;
-	$self->{host} = $addr;
+	$self->{rfd} = $sock;
+	$self->{wfd} = $sock;
+	$self->{rhost} = $addr;
 }
 
 sub rpc_call {
@@ -63,31 +58,16 @@ sub rpc_call {
 sub call {
 	my ($self, $func, %args) = @_;
 	my $reply = $self->rpc_call($func, %args);
-
-	if ($self->{die_on_failure} && !$reply->{success}) {
-		if ($reply->{err}) {
-			chomp(my $err = join("\n", $reply->{err}));
-			warn "$err\n";
-		}
-		die "\033[1;31mError: ".($reply->{msg} // "unknown error")."\033[m\n";
+	if ($self->{raise} && !$reply->{success}) {
+		die "error: ".($reply->{msg} // "unknown error")."\n";
 	}
-
 	return $reply;
-}
-
-sub AUTOLOAD {
-	my ($self, @args) = @_;
-	my ($name) = $Cluenet::Rpc::Client::AUTOLOAD =~ /.+::(.+?)$/;
-	if ($self->{debug}) {
-		warn "AUTOLOAD: $Cluenet::Rpc::Client::AUTOLOAD -> $name\n";
-	}
-	$self->call($name, @args);
 }
 
 sub authenticate {
 	my ($self, $mech) = @_;
 
-	if (defined $self->{sasl}) {
+	if (defined $self->{authreply}) {
 		return $self->{authreply};
 	}
 
@@ -96,25 +76,29 @@ sub authenticate {
 		krb5_ensure_tgt when "GSSAPI";
 	}
 
-	my $sasl = Authen::SASL->new(mech => $mech, callback => $self->{callbacks});
-	$self->{sasl} = $sasl->client_new(SASL_SERVICE, $self->{host});
+	my %callbacks = (
+		user => sub { $self->{user} // getlogin },
+	);
 
-	my $reply = $self->call("auth",
-		mech => $self->{sasl}->mechanism,
-		data => b64_encode($self->{sasl}->client_start));
+	my $sasl = Authen::SASL->new(mechanism => $mech, callback => \%callbacks);
+	my $conn = $sasl->client_new(SASL_SERVICE, $self->{rhost});
+	$self->{sasl} = $conn;
 
-	while (exists $reply->{data}) {
+	my $reply = $self->auth(mech => $conn->mechanism,
+				data => b64_encode($conn->client_start),
+				seal => 1);
+
+	while ($conn->need_step) {
 		my $challenge = b64_decode($reply->{data});
-		$reply = $self->call("auth",
-			data => b64_encode($self->{sasl}->client_step($challenge)));
+		$reply = $self->auth(data => b64_encode($conn->client_step($challenge)));
 	}
 
 	if ($reply->{success}) {
-		$self->{seal} = 1;
 		$self->{authreply} = $reply;
 		if ($self->{verbose}) {
 			warn "\033[32mAuthenticated as $reply->{authuser} (authorized for $reply->{user})\033[m\n";
 		}
+		$self->{seal} = $reply->{seal} // 1;
 	}
 	return $reply;
 }

@@ -1,11 +1,17 @@
 #!perl
-package Cluenet::Rpc;
-# ClueRPC transport layer
+=protocol
 
-use warnings;
-use strict;
-use base "Exporter";
-use feature "say";
+Basic structure:
+
+	char magic[4]		= "!rpc"
+	char length[4]		= data length in hexadecimal
+	char data[length]	= RPC data
+
+=cut
+
+package Cluenet::Rpc;
+use parent 'Exporter';
+use common::sense;
 use Carp;
 use IO::Handle;
 use JSON;
@@ -16,69 +22,57 @@ our @EXPORT = qw(
 	b64_decode
 	failure
 	success
-	rpc_encode
-	rpc_decode
-	);
+);
 
-=protocol
+our $DEBUG = $ENV{DEBUG};
 
-Basic structure:
+sub failure	{ success => 0 }
+sub success	{ success => 1 }
 
-	char magic[4]		= "!rpc"
-	char length[4]		= data length in hexadecimal
-	char data[length]	= RPC data
+sub b64_encode	{ MIME::Base64::encode_base64(shift // "", "") }
+sub b64_decode	{ MIME::Base64::decode_base64(shift // "") }
 
-If negotiated during authentication, data is encrypted using sasl_encode().
+sub new {
+	my ($class, $rfd, $wfd) = @_;
+	my $self = {
+		rfd => $rfd // \*STDIN,
+		wfd => $wfd // $rfd // \*STDOUT,
+	};
+	binmode $self->{rfd}, ":raw";
+	binmode $self->{wfd}, ":raw";
+	bless $self, $class;
+}
 
-Data is a JSON-encoded hash.
-
-	Requests:
-		[$funcname, {%args}]
-	
-	Success replies:
-		{status => 1, %data}
-	
-	Failure replies:
-		{status => 0, msg => "description"}
-
-=cut
-
-sub failure { success => 0 }
-sub success { success => 1 }
-
-sub rpc_encode { encode_json(shift // {}); }
-sub rpc_decode { decode_json(shift || '{}'); }
-
-sub b64_encode { MIME::Base64::encode_base64(shift // "", "") }
-sub b64_decode { MIME::Base64::decode_base64(shift // "") }
+sub close {
+	my ($self) = @_;
+	$self->{rfd}->close;
+	$self->{wfd}->close;
+}
 
 # send/receive binary data
 
 sub rpc_send_packed {
-	my ($fd, $buf) = @_;
-
-	$fd->printf("!rpc%04x", length($buf));
-	$fd->write($buf, length($buf));
-	$fd->flush;
+	my ($self, $buf) = @_;
+	$self->{wfd}->printf('!rpc%04x', length($buf));
+	$self->{wfd}->print($buf);
+	$self->{wfd}->flush;
 }
 
 sub rpc_recv_packed {
-	my $fd = shift;
-
+	my ($self) = @_;
 	my ($len, $buf);
-	# read magic+length
-	unless ($fd->read($buf, 8) == 8) {
+	unless ($self->{rfd}->read($buf, 8) == 8) {
 		return undef;
 	}
-	# check magic number to avoid parsing Perl errors
-	unless (substr($buf, 0, 4) eq "!rpc") {
-		$buf .= $fd->getline;
-		$buf .= "\n" unless $buf =~ /\n$/s;
-		die "Invalid data received:\n$buf";
+	unless ($buf =~ /^!rpc[0-9a-f]{4}$/) {
+		chomp($buf .= $self->{rfd}->getline);
+		$self->{wfd}->print("Protocol mismatch.\n");
+		$self->close;
+		croak "RPC: protocol mismatch, received '$buf'";
+		return undef;
 	}
-	# read data
 	$len = hex(substr($buf, 4));
-	unless ($fd->read($buf, $len) == $len) {
+	unless ($self->{rfd}->read($buf, $len) == $len) {
 		return undef;
 	}
 	return $buf;
@@ -86,48 +80,35 @@ sub rpc_recv_packed {
 
 # send/receive Perl objects
 
-sub rpc_send {
-	my ($self, $data) = @_;
+sub rpc_serialize {
+	return encode_json(shift // {});
+}
 
-	my $buf = rpc_encode($data);
-	$self->{debug} and warn "SEND: $buf\n";
+sub rpc_unserialize {
+	return decode_json(shift || '{}');
+}
+
+sub rpc_send {
+	my ($self, $obj) = @_;
+	my $buf = rpc_serialize($obj);
+	$DEBUG and warn "RPC: --> $buf\n";
 	if ($self->{seal}) {
 		$buf = $self->{sasl}->encode($buf);
 	}
-	rpc_send_packed($self->{outfd}, $buf);
+	$self->rpc_send_packed($buf);
 }
 
 sub rpc_recv {
-	my $self = shift;
-
-	my $buf = rpc_recv_packed($self->{infd});
+	my ($self) = @_;
+	my $buf = $self->rpc_recv_packed;
 	if (!defined $buf) {
 		return {failure, msg => "connection closed while reading"};
 	}
 	if ($self->{seal}) {
 		$buf = $self->{sasl}->decode($buf);
 	}
-	$self->{debug} and warn "RECV: $buf\n";
-	return rpc_decode($buf);
-}
-
-# send/receive Perl objects over stdio
-
-sub rpc_send_fd {
-	my ($data, $fd) = @_;
-
-	my $buf = rpc_encode($data);
-	rpc_send_packed($fd // *STDOUT, $buf);
-}
-
-sub rpc_recv_fd {
-	my ($fd) = @_;
-
-	my $buf = rpc_recv_packed($fd // *STDIN);
-	if (!defined $buf) {
-		return;
-	}
-	return rpc_decode($buf);
+	$DEBUG and warn "RPC: <-- $buf\n";
+	return rpc_unserialize($buf);
 }
 
 1;

@@ -1,10 +1,8 @@
 #!perl
 package Cluenet::Rpc::Server;
-use warnings;
-use strict;
-use feature "say";
-use base "Exporter";
-use base "Cluenet::Rpc";
+use parent 'Cluenet::Rpc';
+use parent 'Exporter';
+use common::sense;
 use Cluenet::Rpc;
 use File::Spec;
 use IPC::Open2;
@@ -19,18 +17,23 @@ our @EXPORT = qw(
 	);
 
 sub new {
+	my ($class) = @_;
 	my $self = {
-		infd	=> \*STDIN,
-		outfd	=> \*STDOUT,
+		rfd	=> \*STDIN,
+		wfd	=> \*STDOUT,
 		eof	=> 0,
 
-		authed	=> 0,
-		user	=> "anonymous",
-		authzid	=> "anonymous",
+		authed		=> 0,
+		user		=> "anonymous",
+		authzid		=> "anonymous",
+
+		seal		=> 0,
+		seal_want	=> 0,
+		seal_next	=> 0,
 	};
-	binmode $self->{infd}, ":raw";
-	binmode $self->{outfd}, ":raw";
-	bless $self, shift;
+	binmode $self->{rfd}, ":raw";
+	binmode $self->{wfd}, ":raw";
+	bless $self, $class;
 }
 
 sub spawn_helper {
@@ -41,24 +44,25 @@ sub spawn_helper {
 			$self->{user});
 
 	my $data = {user => $self->{user},
-		authuser => $self->{authuser},
-		request => $req // {}};
+			authuser => $self->{authuser},
+			request => $req // {}};
 
 	return spawn_ext(\@cmd, $data);
 }
 
 sub spawn_ext {
 	my ($cmd, $data) = @_;
-	my ($pid, $infd, $outfd, $reply);
+	my ($pid, $rfd, $wfd, $reply);
 
-	if ($pid = open2($infd, $outfd, @$cmd)) {
-		Cluenet::Rpc::rpc_send_fd($data, $outfd);
-		$outfd->close;
-		$reply = Cluenet::Rpc::rpc_recv_fd($infd);
+	if ($pid = open2($rfd, $wfd, @$cmd)) {
+		my $ext = Cluenet::Rpc->new($rfd, $wfd);
+		$ext->send($data);
+		$wfd->close;
+		$reply = $ext->recv;
 		waitpid($pid, WNOHANG);
 	} else {
 		$reply = {failure,
-			msg => "internal error: spawn_ext failed to execute '${cmd}[0]'"};
+			msg => "internal error: spawn_ext failed to execute '$cmd[0]'"};
 	}
 	return $reply;
 }

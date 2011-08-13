@@ -67,13 +67,11 @@ for my $file (glob(COMMAND_DIR)) {
 
 # connect to RPC server
 
+$Cluenet::Rpc::DEBUG = $debug;
 $rpc = Cluenet::Rpc::Client->new;
-$rpc->{callbacks} = {
-	user => \$user,
-};
+$rpc->{user} = $user;
 $rpc->{verbose} = $verbose;
-$rpc->{debug} = $debug;
-$rpc->{die_on_failure} = 1;
+$rpc->{raise} = 1;
 
 $rpc->connect($host, $port);
 
@@ -131,11 +129,13 @@ given ($cmd) {
 		$rpc->authenticate;
 		print "perl: ";
 		while (<STDIN>) {
-			my ($func, %args) = eval $_;
-			$r = $rpc->call($func, %args);
+			my ($func, $args) = eval $_;
+			print Data::Dumper->Dump([$func, $args], ["Func", "Args"]);
+			$r = $rpc->call($func, %$args);
 			print Data::Dumper->Dump([$r], ["Reply"]);
 			print "perl: ";
 		}
+		print "\n";
 	}
 	when (defined $commands{$cmd}) {
 		$commands{$cmd}{command}->();

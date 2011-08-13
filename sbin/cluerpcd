@@ -109,12 +109,12 @@ $functions{"auth"} = sub {
 					msg => "unsupported mechanism"};
 			}
 			$state->{seal_wanted} = $req->{seal} // 1;
+			$sasl = Authen::SASL->new(mechanism => $req->{mech},
+					# ugly hack to pass $state (really $state->{sasl}) to callbacks
+					callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks});
+			$conn = $sasl->server_new(SASL_SERVICE, getfqdn);
+			$state->{sasl} = $conn;
 			$state->{saslsteps} = 0;
-			$state->{sasl} = Authen::SASL->new(
-				mechanism => $req->{mech},
-				# ugly hack to pass $state (really $state->{sasl}) to callbacks
-				callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks}
-				)->server_new(SASL_SERVICE, getfqdn);
 			$challenge = $state->{sasl}->server_start(grep {length} $response);
 		}
 		else {
@@ -136,7 +136,8 @@ $functions{"auth"} = sub {
 		$state->{seal_next} = $state->{seal_wanted};
 		return {success,
 			user => $state->{user},
-			authuser => $state->{authuser}};
+			authuser => $state->{authuser},
+			seal => $state->{seal_next}};
 	}
 	else {
 		$state->{eof} = 1;
