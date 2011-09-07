@@ -7,7 +7,7 @@ use Authen::Krb5;
 use Cluenet::Common;
 use Cluenet::Kerberos;
 use Cluenet::LDAP;
-use Cluenet::Rpc;
+use Cluenet::Rpc::Server;
 use File::Temp qw(tempfile);
 
 use constant {
@@ -79,7 +79,7 @@ sub forward_request {
 my $ccache = kinit_as_service("host", keytab => KEYTAB_FILE);
 $ENV{KRB5CCNAME} = $ccache->get_name;
 
-Cluenet::Rpc::helper_main {
+rpc_helper_main {
 	my ($req, $user, $authuser) = @_;
 
 	my @required = qw(user server service action);
