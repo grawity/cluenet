@@ -11,7 +11,7 @@ use constant {
 };
 
 sub usage {
-	say "Usage: mysqlpasswd [-h host] [--ssl]";
+	say "Usage: mysqlpasswd [-h|--host <host>] [-s|-ssl] [<username>]";
 	exit 2;
 }
 
@@ -32,6 +32,10 @@ sub Main {
 
 	if ($usessl) {
 		$dbhost .= ":mysql_ssl=1";
+	}
+	elsif ($dbhost) {
+		warn "\e[1mWarning: Your new password will be transmitted in clear text. To avoid this,\n";
+		warn "         enable SSL with the -s option, or change the password over SSH.\e[m\n";
 	}
 
 	my $oldpass = getpass("Old MySQL password: ");

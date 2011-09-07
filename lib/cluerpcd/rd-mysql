@@ -53,6 +53,7 @@ sub update_account {
 				hostmask => $userhost,
 				password => $userpw,
 				dbmask => $dbmask},
+			msg => "Use 'mysqlpasswd' or phpMyAdmin' to change your password.",
 			admin_url => PHPMYADMIN_URL};
 	};
 
