@@ -1,0 +1,56 @@
+#!/usr/bin/env perl
+use common::sense;
+use Cluenet::Rpc::Server;
+use IPC::Open3;
+
+rpc_helper_main {
+	my ($req, $user, $authuser) = @_;
+
+	my @groups = qw(
+		cluedocs
+		fuse
+		secure
+	);
+
+	my $grp = $req->{group};
+	my $revoke = $req->{revoke};
+
+	if (!defined $grp) {
+		return {failure,
+			msg => "missing parameter"};
+	}
+	elsif ($grp eq "") {
+		return {success,
+			groups => \@groups};
+	}
+	elsif (!($grp ~~ @groups)) {
+		return {failure,
+			msg => "unknown group: '$grp'"};
+	}
+
+	my ($in, $out, $err);
+	my @args = ("sudo",
+			"/usr/bin/gpasswd",
+			$revoke ? "-d" : "-a",
+			$user,
+			$grp);
+	my $pid = open3($in, $out, undef, @args);
+	waitpid($pid, 0);
+	my $ret = $? >> 8;
+	$out->getline;
+	if ($ret == 0) {
+		return {success};
+	}
+	else {
+		chomp(my $errmsg = $out->getline);
+		given ($errmsg) {
+			when (/^gpasswd: user .+ is not a member of .+$/) {
+				return {success};
+			}
+			default {
+				return {failure,
+					msg => $errmsg};
+			}
+		}
+	}
+};
