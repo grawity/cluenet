@@ -6,6 +6,7 @@ BEGIN {
 }
 use warnings;
 use strict;
+use feature "say";
 use feature "switch";
 use constant LDAP_HOST => "ldap.cluenet.org";
 
@@ -766,7 +767,29 @@ MISCELLANEOUS
 
 $commands{"whoami"} = sub {
 	$ldap = connect_auth();
-	print $ldap->who_am_i->response."\n";
+	my $dn = $ldap->who_am_i->response;
+	my $uid;
+	given ($dn) {
+		when (/^dn:uid=(.+),ou=people,dc=cluenet,dc=org$/) {
+			$uid = $1;
+		}
+	}
+	say $dn;
+	given ($uid) {
+		when (/^(.+)@(.+?)$/) {
+			my $query = Net::DNS::Resolver->new->query("_kerberos.$2", "TXT");
+			if ($query) {
+				my $realm = (($query->answer)[0]->char_str_list)[0];
+				say "Foreign user '$1' from realm $realm";
+			}
+			else {
+				say "Foreign user '$1' from $2";
+			}
+		}
+		default {
+			say "Cluenet user '$uid'";
+		}
+	}
 	return 0;
 };
 
