@@ -73,7 +73,9 @@ sub authenticate {
 
 	$mech //= "GSSAPI";
 	given (uc $mech) {
-		krb5_ensure_tgt when "GSSAPI";
+		when ("GSSAPI") {
+			krb5_ensure_tgt;
+		}
 	}
 
 	my %callbacks = (
