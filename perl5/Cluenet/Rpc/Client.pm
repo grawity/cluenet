@@ -3,7 +3,7 @@ package Cluenet::Rpc::Client;
 use parent 'Cluenet::Rpc';
 use parent 'Exporter';
 use common::sense;
-use Authen::SASL "XS";
+use Authen::SASL;
 use Carp;
 use Cluenet::Common;
 use Cluenet::Kerberos;
