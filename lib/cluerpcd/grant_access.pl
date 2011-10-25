@@ -6,13 +6,9 @@
 		return {failure,
 			msg => "access denied"};
 	}
-	unless ($req->{server} and $req->{service}) {
+	unless ($req->{service}) {
 		return {failure,
 			msg => "missing parameter"};
-	}
-	unless ($req->{server} eq getfqdn()) {
-		return {failure,
-			msg => "wrong server"};
 	}
 
 	$req->{user} = $self->{user};

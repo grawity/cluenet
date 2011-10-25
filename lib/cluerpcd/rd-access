@@ -82,7 +82,7 @@ $ENV{KRB5CCNAME} = $ccache->get_name;
 rpc_helper_main {
 	my ($req, $user, $authuser) = @_;
 
-	my @required = qw(user server service action);
+	my @required = qw(user service action);
 
 	if (grep {!defined} @{$req}{@required}) {
 		return {failure, msg => "missing parameter"};
@@ -98,7 +98,7 @@ rpc_helper_main {
 
 	given ($req->{service}) {
 		when (["samba", "ftp", "xmpp"]) {
-			return modify_acl($req->{server}, $req->{service},
+			return modify_acl(getfqdn, $req->{service},
 				$req->{user}, $req->{action});
 		}
 		default {

@@ -17,8 +17,7 @@ use feature "switch";
 		my $do_revoke = ($service =~ s/^-//);
 
 		$rpc->authenticate;
-		my $reply = $rpc->grant_access(server => getfqdn,
-						service => $service,
+		my $reply = $rpc->grant_access(service => $service,
 						revoke => $do_revoke);
 
 		given ($reply->{action}) {
