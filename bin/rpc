@@ -41,9 +41,6 @@ sub confirm {
 	}
 }
 
-sub authenticate	{ $rpc->authenticate(@_); }
-sub request		{ $rpc->call(shift, {@_}); }
-
 $user = getlogin;
 $host = undef;
 $port = undef;

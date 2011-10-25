@@ -28,8 +28,6 @@ use feature "switch";
 
 	command =>
 	sub {
-		use Getopt::Long qw(:config bundling no_ignore_case);
-
 		my $zone = "cluenet.org";
 		my $quiet = 0;
 
