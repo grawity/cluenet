@@ -38,6 +38,7 @@ sub sshagent_add {
 		or die "Unable to change to temporary directory.\n";
 	
 	$name =~ s/^ssh: //;
+	$name =~ s|/|_|;
 	open($fh, ">", $name);
 	$fh->print($data);
 	$fh->close;
