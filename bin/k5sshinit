@@ -37,6 +37,7 @@ sub sshagent_add {
 	chdir($dir)
 		or die "Unable to change to temporary directory.\n";
 	
+	$name =~ s/^ssh: //;
 	open($fh, ">", $name);
 	$fh->print($data);
 	$fh->close;
@@ -85,5 +86,5 @@ $rpc->authenticate;
 if (@ARGV) {
 	ks_import($_) for @ARGV;
 } else {
-	ks_import($_) for grep {/^id_/} ks_list;
+	ks_import($_) for grep {/^id_/ or /^ssh: /} ks_list;
 }
