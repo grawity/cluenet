@@ -16,13 +16,8 @@ my $service	= 'host';
 my $host	= getfqdn;
 my $mech	= 'plain';
 my $user	= getlogin;
-my $authuser	= getlogin;
+my $authuser;
 my $password;
-
-%cb = (
-	user		=> sub { return $user },
-	pass		=> sub { return $password },
-);
 
 GetOptions(
 	'm|mech=s'	=> \$mech,
@@ -37,12 +32,16 @@ unless (defined $host && defined $service && defined $mech) {
 	die "Missing host/service/mech parameters.\n";
 }
 
-if ($use_pw) {
-	chomp($password = STDIN->getline);
-}
+$cb{user} = sub { $user };
 
 if (defined $authuser) {
-	$cb{authuser} = sub { return $authuser };
+	# TODO: Find out why GSSAPI fails if this is present.
+	$cb{authuser} = sub { $authuser };
+}
+
+if ($use_pw) {
+	chomp($password = STDIN->getline);
+	$cb{pass} = sub { $password };
 }
 
 sub auth {
@@ -50,6 +49,9 @@ sub auth {
 	my $sasl;
 	my $inbuf;
 	my $outbuf;
+
+	STDOUT->autoflush(1);
+	STDERR->autoflush(1);
 
 	$sasl = Authen::SASL->new(mech => uc $mech, callback => \%cb)
 			->client_new($service, $host);
@@ -72,9 +74,9 @@ sub auth {
 			say "err ".($sasl->error)[1];
 			exit 1;
 		} else {
+			#say "# ".$sasl->code;
 			say "write ".b64_encode($outbuf);
 		}
-
 	} while ($sasl->need_step);
 
 	if ($sasl->code < 0) {
@@ -82,6 +84,7 @@ sub auth {
 		exit 1;
 	} else {	
 		say "done";
+		exit 0;
 	}
 }
 

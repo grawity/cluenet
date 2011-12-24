@@ -1,0 +1,76 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use feature "say";
+use feature "switch";
+use feature "state";
+use Authen::SASL;
+use Cluenet::Common;
+use Cluenet::Rpc;
+use Cluenet::Rpc::Server;
+
+my $parent = Cluenet::Rpc->new;
+
+sub auth {
+	state $sasl;
+	state $cb;
+	my ($func, %in) = @_;
+	given ($func) {
+		when ("new") {
+			my $user = $in{user} // getlogin;
+			$cb->{user} = sub { $user };
+			
+			$sasl = Authen::SASL->new(mech => uc $in{mech}, callback => $cb)
+				->client_new($in{service}, $in{host});
+			return {success};
+		}
+
+		when ("start") {
+			my $outbuf = $sasl->client_start;
+			if ($sasl->code < 0) {
+				return {failure,
+					msg => ($sasl->error)[1],
+					code => $sasl->code};
+			} else {
+				return {success,
+					data => b64_encode($outbuf),
+					code => $sasl->code,
+					step => $sasl->need_step};
+			}
+		}
+
+		when ("step") {
+			my $inbuf = b64_decode($in{data});
+			my $outbuf = $sasl->client_step($inbuf);
+			if ($sasl->code < 0) {
+				return {failure,
+					msg => ($sasl->error)[1],
+					code => $sasl->code};
+			} else {
+				return {success,
+					data => b64_encode($outbuf),
+					code => $sasl->code,
+					step => $sasl->need_step};
+			}
+		}
+		
+		when ("encode") {
+			my $inbuf = b64_decode($in{data});
+			my $outbuf = $sasl->encode($inbuf);
+			return {success,
+				data => b64_encode($outbuf)};
+		}
+		
+		when ("decode") {
+			my $inbuf = b64_decode($in{data});
+			my $outbuf = $sasl->decode($inbuf);
+			return {success,
+				data => b64_encode($outbuf)};
+		}
+	}
+}
+
+while (my $data = $parent->rpc_recv) {
+	my ($func, $in) = @$data;
+	$parent->rpc_send(auth($func, %$in));
+}

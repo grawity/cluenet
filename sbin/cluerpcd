@@ -178,6 +178,11 @@ sub load_func {
 sub handle_request {
 	my ($server, $req) = @_;
 
+	if (ref $req ne 'ARRAY') {
+		return {failure, msg => "internal error: \$req is not an arrayref",
+				req => $req};
+	}
+
 	my ($func, $args) = @$req;
 	if (!defined $func) {
 		return {failure, msg => "missing function"};
