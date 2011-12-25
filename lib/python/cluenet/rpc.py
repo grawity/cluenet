@@ -45,7 +45,7 @@ class RpcPeer(object):
 			length = int(buf[4:12], 16)
 		except:
 			buf += self.rfd.read(502)
-			self.wfd.write("Protocol mismatch\n")
+			self.wfd.write("Protocol mismatch.\n")
 			self.close()
 			raise IOError("Protocol mismatch: received %r" % buf)
 		buf = self.rfd.read(length)
