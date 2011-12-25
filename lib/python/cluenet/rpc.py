@@ -31,18 +31,18 @@ class RpcPeer(object):
 
 	def rpc_send_packed(self, buf):
 		"""Send binary buffer as RPC packet"""
-		self.wfd.write("!rpc%04x" % len(buf))
+		self.wfd.write("!rpc%08x" % len(buf))
 		self.wfd.write(buf)
 		self.wfd.flush()
 
 	def rpc_recv_packed(self):
 		"""Receive RPC packet with binary buffer"""
-		buf = self.rfd.read(8)
-		if len(buf) != 8:
+		buf = self.rfd.read(12)
+		if len(buf) != 12:
 			raise IOError("Connection closed while reading")
 		try:
 			if buf[:4] != "!rpc": raise ValueError
-			length = int(buf[4:8], 16)
+			length = int(buf[4:12], 16)
 		except:
 			buf += self.rfd.read(502)
 			self.wfd.write("Protocol mismatch\n")

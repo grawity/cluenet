@@ -53,7 +53,7 @@ sub close {
 
 sub rpc_send_packed {
 	my ($self, $buf) = @_;
-	$self->{wfd}->printf('!rpc%04x', length($buf));
+	$self->{wfd}->printf('!rpc%08x', length($buf));
 	$self->{wfd}->print($buf);
 	$self->{wfd}->flush;
 }
@@ -61,10 +61,10 @@ sub rpc_send_packed {
 sub rpc_recv_packed {
 	my ($self) = @_;
 	my ($len, $buf);
-	unless ($self->{rfd}->read($buf, 8) == 8) {
+	unless ($self->{rfd}->read($buf, 12) == 12) {
 		return undef;
 	}
-	unless ($buf =~ /^!rpc[0-9a-f]{4}$/) {
+	unless ($buf =~ /^!rpc[0-9a-f]{8}$/) {
 		chomp($buf .= $self->{rfd}->getline);
 		$self->{wfd}->print("Protocol mismatch.\n");
 		$self->close;
