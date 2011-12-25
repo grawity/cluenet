@@ -8,5 +8,5 @@ service cluerpc
 	port		= 10875
 	wait		= no
 	user		= cluerpc
-	server		= /home/grawity/cluenet/sbin/cluerpcd
+	server		= /cluenet/sbin/cluerpcd
 }

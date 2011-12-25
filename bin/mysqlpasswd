@@ -6,9 +6,8 @@ use DBI;
 use Getopt::Long qw(:config bundling no_ignore_case);
 use Term::ReadPassword;
 
-use constant {
-	MIN_LENGTH	=> 2,
-};
+use constant
+	MIN_LENGTH	=> 2;
 
 sub usage {
 	say "Usage: mysqlpasswd [-h|--host <host>] [-s|-ssl] [<username>]";
@@ -19,7 +18,7 @@ sub getpass { read_password(shift, 0, 1) // exit; }
 
 sub handle_err { say $DBI::errstr; exit 1; }
 
-sub Main {
+sub main {
 	my $dbhost	= "localhost";
 	my $usessl	= 0;
 
@@ -33,7 +32,8 @@ sub Main {
 	if ($usessl) {
 		$dbhost .= ":mysql_ssl=1";
 	}
-	elsif ($dbhost) {
+	elsif ($dbhost ne 'localhost') {
+		# 'localhost' uses Unix sockets, is okay
 		warn "\e[1mWarning: Your new password will be transmitted in clear text. To avoid this,\n";
 		warn "         enable SSL with the -s option, or change the password over SSH.\e[m\n";
 	}
@@ -61,4 +61,4 @@ sub Main {
 	}
 }
 
-Main;
+main;

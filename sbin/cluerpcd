@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+BEGIN { push @INC, "/cluenet/lib/perl5" }
 use v5.10; # Damn right.
 use warnings;
 use strict;
@@ -41,23 +42,13 @@ sub authorize {
 	}
 }
 
-sub checkpass {
+sub krb5_checkpass {
 	my ($server, $user, $pass) = @_;
 	my $krb = Authen::Krb5::Simple->new;
 	return $krb->authenticate($user, $pass);
 }
 
-my %callbacks = (
-	checkpass => sub {
-		my ($server, $user, $pass) = @_;
-		if (checkpass($server, $user, $pass)) {
-			$server->{authuser} = $user;
-			return 1;
-		} else {
-			return 0;
-		}
-	},
-
+my %sasl_callbacks = (
 	authorize => sub {
 		my ($server, $authzid, $authnid) = @_;
 		if (authorize($server, $authzid, $authnid)) {
@@ -68,7 +59,6 @@ my %callbacks = (
 			return 0;
 		}
 	},
-
 	canonuser => sub {
 		my ($server, $type, $_a, $flags, $user) = @_;
 		if ($type eq 'AUTHID') {
@@ -76,6 +66,15 @@ my %callbacks = (
 		}
 		else {
 			return $user;
+		}
+	},
+	checkpass => sub {
+		my ($server, $user, $pass) = @_;
+		if (krb5_checkpass($server, $user, $pass)) {
+			$server->{authuser} = $user;
+			return 1;
+		} else {
+			return 0;
 		}
 	},
 );
@@ -88,55 +87,56 @@ $functions{"auth"} = sub {
 
 	if ($state->{authed}) {
 		return {failure,
-			msg => "already authenticated"};
+			error => "authentication failed: already authenticated"};
 	}
 
 	$response = b64_decode($req->{data});
 
 	if (defined $state->{sasl}) {
-		if (defined $req->{mech}) {
+		if (defined $req->{mech} and uc $req->{mech} ne $state->{sasl_mech}) {
 			return {failure,
-				msg => "cannot change mechanism during authentication"};
-		}
-		else {
+				error => "invalid argument: cannot change mechanism during authentication"};
+		} else {
 			$challenge = $state->{sasl}->server_step($response);
 		}
-	}
-	else {
+	} else {
 		if (defined $req->{mech}) {
-			unless (uc $req->{mech} ~~ ["GSSAPI"]) {
+			my $mech = uc $req->{mech};
+			unless ($mech ~~ ["GSSAPI"]) {
 				return {failure,
-					msg => "unsupported mechanism"};
+					error => "authentication failed: unsupported mechanism"};
 			}
-			my $sasl = Authen::SASL->new(mechanism => $req->{mech},
-					# ugly hack to pass $state (really $state->{sasl}) to callbacks
-					callback => {map {$_ => [$callbacks{$_}, $state]} keys %callbacks});
-			my $conn = $sasl->server_new(SASL_SERVICE, getfqdn);
 
-			$state->{sasl} = $conn;
-			$state->{saslsteps} = 0;
-			$state->{seal_wanted} = $req->{seal} // 1;
+			# ugly hack to pass $state (really $state->{sasl}) to callbacks
+			my $callbacks = {map {$_ => [$sasl_callbacks{$_}, $state]} keys %sasl_callbacks};
 
+			my $sasl = Authen::SASL->new(mechanism => $mech, callback => $callbacks);
+			$state->{sasl} = $sasl->server_new(SASL_SERVICE, getfqdn);
 			$challenge = $state->{sasl}->server_start(grep {length} $response);
-		}
-		else {
+
+			$state->{sasl_mech} = $mech;
+			$state->{sasl_steps} = 0;
+			$state->{seal_wanted} = $req->{seal} // 1;
+		} else {
 			return {failure,
-				msg => "missing mechanism"};
+				error => "invalid argument: missing mechanism"};
 		}
 	}
 
-	if (++$state->{saslsteps} >= 50) {
+	if (++$state->{sasl_steps} >= 50) {
 		return {failure,
-			msg => "internal error: infinite loop"};
+			error => "authentication failed: infinite loop"};
 	}
 	elsif ($state->{sasl}->need_step) {
 		return {success,
+			finished => 0,
 			data => b64_encode($challenge)};
 	}
 	elsif ($state->{sasl}->code == 0) {
 		$state->{authed} = 1;
 		$state->{seal_next} = $state->{seal_wanted};
 		return {success,
+			finished => 1,
 			user => $state->{user},
 			authuser => $state->{authuser},
 			seal => $state->{seal_next}};
@@ -144,12 +144,12 @@ $functions{"auth"} = sub {
 	else {
 		$state->{eof} = 1;
 		return {failure,
-			msg => "authentication failed",
-			error => [$state->{sasl}->error]};
+			error => "authentication failed",
+			data => [$state->{sasl}->error]};
 	}
 };
 
-$functions{"list"} = sub {
+$functions{"functions"} = sub {
 	my @cmds = map {basename($_, ".pl")} glob(COMMAND_DIR."/*.pl");
 	push @cmds, keys %functions;
 	return {success,
@@ -164,38 +164,37 @@ sub load_func {
 	my $file = COMMAND_DIR."/".$name.".pl";
 	if (-f $file) {
 		my ($name, $func) = do $file;
-		if ($@) {
-			return undef;
-		}
-		else {
-			return $func;
-		}
+		return $@ ? undef : $func;
+	} else {
+		return undef;
 	}
-
-	return undef;
 }
 
 sub handle_request {
 	my ($server, $req) = @_;
 
 	if (ref $req ne 'ARRAY') {
-		return {failure, msg => "internal error: \$req is not an arrayref",
-				req => $req};
+		return {failure,
+			error => "internal error: \$req is not an arrayref",
+			data => $req};
 	}
 
 	my ($func, $args) = @$req;
 	if (!defined $func) {
-		return {failure, msg => "missing function"};
+		return {failure,
+			error => "invalid argument: missing function name"};
 	}
 
 	my $handler = load_func($func);
 	if (!defined $handler) {
-		return {failure, msg => "invalid function: '$func'"};
+		return {failure,
+			error => "unknown function: '$func'"};
 	}
 
 	my $reply = eval {$handler->($server, $args)};
 	if ($@) {
-		return {failure, msg => "internal error: $@"};
+		return {failure,
+			error => "internal error: $@"};
 	} else {
 		return $reply;
 	}

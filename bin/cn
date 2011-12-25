@@ -1,9 +1,5 @@
 #!/usr/bin/env perl
-BEGIN {
-	use Cwd;
-	use File::Basename;
-	push @INC, Cwd::realpath(dirname($0)."/../perl5");
-}
+BEGIN { push @INC, "/cluenet/lib/perl5" }
 use warnings;
 use strict;
 use feature "say";

@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+BEGIN { push @INC, "/cluenet/lib/perl5" }
 use warnings;
 use strict;
 use feature "say";
@@ -29,13 +30,13 @@ sub auth {
 			my $outbuf = $sasl->client_start;
 			if ($sasl->code < 0) {
 				return {failure,
-					msg => ($sasl->error)[1],
+					error => "security layer error: ".($sasl->error)[1],
 					code => $sasl->code};
 			} else {
 				return {success,
 					data => b64_encode($outbuf),
 					code => $sasl->code,
-					step => $sasl->need_step};
+					finished => !$sasl->need_step};
 			}
 		}
 
@@ -44,28 +45,45 @@ sub auth {
 			my $outbuf = $sasl->client_step($inbuf);
 			if ($sasl->code < 0) {
 				return {failure,
-					msg => ($sasl->error)[1],
+					error => "security layer error: ".($sasl->error)[1],
 					code => $sasl->code};
 			} else {
 				return {success,
 					data => b64_encode($outbuf),
 					code => $sasl->code,
-					step => $sasl->need_step};
+					finished => !$sasl->need_step};
 			}
 		}
 		
 		when ("encode") {
 			my $inbuf = b64_decode($in{data});
 			my $outbuf = $sasl->encode($inbuf);
-			return {success,
-				data => b64_encode($outbuf)};
+			if ($sasl->code < 0) {
+				return {failure,
+					error => "security layer error: ".($sasl->error)[1],
+					code => $sasl->code};
+			} else {
+				return {success,
+					data => b64_encode($outbuf)};
+			}
 		}
 		
 		when ("decode") {
 			my $inbuf = b64_decode($in{data});
 			my $outbuf = $sasl->decode($inbuf);
-			return {success,
-				data => b64_encode($outbuf)};
+			if ($sasl->code < 0) {
+				return {failure,
+					error => "security layer error: ".($sasl->error)[1],
+					code => $sasl->code};
+			} else {
+				return {success,
+					data => b64_encode($outbuf)};
+			}
+		}
+
+		default {
+			return {failure,
+				error => "unknown function"};
 		}
 	}
 }
