@@ -1,4 +1,4 @@
 #!perl
-"noop" => sub {
+sub {
 	return {success, msg => "Nothing happens."};
 };

@@ -1,7 +1,7 @@
 #!perl
 use feature "switch";
 
-"grant_group" => sub {
+sub {
 	my ($self, $req) = @_;
 
 	unless ($self->{authed}) {

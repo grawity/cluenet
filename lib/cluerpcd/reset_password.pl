@@ -1,7 +1,7 @@
 #!perl
 use feature "switch";
 
-"reset_password" => sub {
+sub {
 	my ($self, $req) = @_;
 
 	my %services = (

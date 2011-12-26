@@ -1,5 +1,5 @@
 #!perl
-manage_dns => sub {
+sub {
 	my ($self, $req) = @_;
 
 	unless ($self->{authed}) {

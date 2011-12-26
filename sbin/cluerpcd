@@ -163,7 +163,7 @@ sub load_func {
 
 	my $file = COMMAND_DIR."/".$name.".pl";
 	if (-f $file) {
-		my ($name, $func) = do $file;
+		my $func = do $file;
 		return $@ ? undef : $func;
 	} else {
 		return undef;

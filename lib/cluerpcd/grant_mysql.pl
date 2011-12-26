@@ -1,5 +1,5 @@
 #!perl
-"grant_mysql" => sub {
+sub {
 	my ($self, $req) = @_;
 
 	unless ($self->{authed}) {

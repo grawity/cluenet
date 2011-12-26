@@ -1,5 +1,5 @@
 #!perl
-"keystore" => sub {
+sub {
 	my ($self, $req) = @_;
 
 	unless ($self->{authed}) {
