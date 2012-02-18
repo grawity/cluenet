@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="utf-8">
+	<title>Cluenet: User account management</title>
+	<link rel="stylesheet" href="main.css">
+</head>
+
+<h1>User account management</h1>
+
+<h2>Directory</h2>
+
+<p>All user accounts are stored in a LDAP directory at <code>ldap.cluenet.org</code> as standard <code>posixAccount</code>+<code>inetOrgPerson</code> entries, usable with <i>nss_ldap</i>.</p>
+
+<p>Most servers use the <a href="http://arthurdejong.org/nss-pam-ldapd/">nss-pam-ldapd</a> package instead of the traditional PADL pam_ldap/nss_ldap modules. Instead of the <i>nslcd</i> daemon, though, the <i>slapo-nssov</i> OpenLDAP module is used, allowing PAM/NSS to communicate directly with a locally running slapd instance.</p>
+
+<p>As the servers are distributed, many of them geographically far from the (only) LDAP server, most of them run the <code>slapd</code> OpenLDAP daemon configured to replicate the entire directory's contents using <a href="http://www.openldap.org/doc/admin23/syncrepl.html">syncrepl</a>. This configuration provides persistent caching with instant updates, as well as the integration with nss-pam-ldapd.</p>
+
+<p>(Earliest attempts at caching used <code>nscd</code> or <code>nss_db</code>, but they were limited to static caches with long TTLs, making account updates problematic. The <code>nslcd</code> daemon from nss-pam-ldapd only solved the problem partially, being able to maintain a persistent LDAP connection, but still without the ability to instantly detect changes.)</p>
+
+<h2>Authentication</h2>
+
+<p>Cluenet uses Kerberos 5 for user authentication, in the <code>CLUENET.ORG</code> realm. Most servers support both password- and ticket-based authentication, although some do not yet have the required keytabs for tickets. In other cases, rDNS is impossible to configure (NAT, ISPs); ClueVPN was supposed to solve this particular problem.</p>
+
+<p>Services that do not speak Kerberos can use LDAP, trying to bind to the user's DN with the provided password. The LDAP server will verify the password against Kerberos. (Earlier, LDAP and Kerberos used to have separate passwords, which would sometimes go out of sync.)</p>
+
+<h2>Authorization</h2>
+
+<p>Earliest configurations used the standard <code>authorizedService</code> and <code>host</code> attributes of user entries. This proved to be too inflexible, as it was mostly "all or nothing": allowing a service such as mail or cron would automatically apply to all servers the user could connect to. Later the <code>authorizedHostService</code> attribute was introduced as a patch to <i>pam_ldap</i> by Crispy, accepting <samp>host.domain:service</samp> pairs which a server admin could add through the <i>remctl</i> API, but the patch was too difficult to maintain for all kinds of systems, and Cluenet switched to the current <i>nssov</i> system.</p>
+
+<p>Authorization checks are done by the <i>nssov</i> overlay described above. The scheme is slightly complicated: each server has a LDAP entry under <code>ou=servers, dc=cluenet, dc=org</code> with <code>authorizedService</code> attributes for every service available, and all authorized users are listed under <code>cn=<var>service</var>, cn=svcAccess, cn=<var>fqdn</var>, ou=servers, dc=cluenet, dc=org</code>. The authorization check involves doing a LDAP "Compare" operation against the <code>authorizedService:<var>service</var></code> attribute, which is restricted by <i>slapd</i> ACLs to the corresponding user group</p>
+
+<pre>
+to dn.regex="^cn=(.+\.cluenet\.org),ou=servers,dc=cluenet,dc=org$"
+  attrs=authorizedService val.regex="(.+)"
+  by group.regex="cn=${v1},cn=svcAccess,cn=$1,ou=servers,dc=cluenet,dc=org" read
+  by * =rsd
+</pre>
+
+<p>Users can gain access semi-automatically through the <a href="gaining-access.html">"Requirements"</a> web page. The groups can be managed manually by the server owner and "authorized administrators" as listed in the server entry itself.</p>

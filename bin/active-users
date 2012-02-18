@@ -1,0 +1,17 @@
+#!/bin/bash
+# Lists users [not] logged in since ${days} days according to lastlog.
+
+days=${1:-30}
+
+if [[ ${0##*/} == "active-users" ]]; then
+	args="-t $days"
+	echo "Users active in the last $days days:"
+else
+	args="-t 9999 -b $days"
+	echo "Users not logged in in the last $days days:"
+fi
+
+lastlog -u 1000- $args | {
+	read
+	sort
+}

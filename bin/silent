@@ -1,0 +1,10 @@
+#!/bin/sh
+log=$(mktemp /tmp/log.XXXXXXXX)
+
+"$@" >"$log" 2>&1; r=$?
+
+if [ $r -gt 0 ]; then
+	cat "$log"
+fi
+rm -f "$log"
+exit $r
