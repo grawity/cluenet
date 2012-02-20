@@ -1,0 +1,182 @@
+#!/usr/bin/env perl
+BEGIN { push @INC, "/cluenet/lib/perl5" }
+use common::sense;
+use Cluenet::Rpc::Client;
+use Data::Dumper;
+use File::Basename;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use Sys::Hostname;
+use Term::ReadPassword;
+
+my $host = hostname();
+my $port = 10875;
+my $reply;
+my $rpc;
+my $user = getlogin();
+my $yes = 0;
+my %commands;
+
+sub APPNAME { basename($0) }
+
+sub joindef {
+	join(" ", grep {defined} @_);
+}
+
+sub confirm {
+	unless ($yes) {
+		my $text = shift;
+		print "$text [yn] ";
+		exit unless <STDIN> =~ /^y/i;
+	}
+}
+
+$commands{"help"} = {
+	func => sub {
+		$reply = $rpc->functions();
+		my @supported = @{$reply->{functions}};
+
+		say "Usage:";
+		say "";
+
+		for my $cmd (sort keys %commands) {
+			my $usage = $commands{$cmd}{usage};
+			my $descr = $commands{$cmd}{description};
+
+			next if grep {not $_ ~~ @supported} @{$commands{$cmd}{requires}};
+
+			if (defined $usage) {
+				say joindef(APPNAME, $cmd, $usage);
+				if (defined $descr) {
+					say "\t$descr";
+				}
+				say "";
+			} else {
+				next;
+			}
+		}
+	},
+};
+
+$commands{"raw"} = {
+	description => "send RPC calls directly",
+
+	#usage => "",
+
+	func =>	sub {
+		$rpc->{raise_errors} = 0;
+		print "perl: ";
+		while (<STDIN>) {
+			my ($func, %args) = eval $_;
+			print Data::Dumper->Dump([$func, \%args], ["Func", "Args"]);
+			$reply = $rpc->callfunc($func, %args);
+			print Data::Dumper->Dump([$reply], ["Reply"]);
+			print "\n";
+			print "perl: ";
+		}
+		print "\n";
+	},
+};
+
+$commands{"get-mysql"} = {
+	description => "create/reset a MySQL account",
+
+	usage => "[user]",
+
+	require => ["grant_mysql"],
+
+	func => sub {
+		my %req;
+		$req{user} = shift(@ARGV) // $rpc->{auth_info}{user};
+		$req{host} = undef; # FIXME add support
+
+		confirm("Create a MySQL account '\e[1m$req{user}\e[m'?");
+
+		$reply = $rpc->grant_mysql(%req);
+
+		if ($reply->{account}) {
+			say "MySQL account updated.";
+			say "";
+			say "Username:\t".$reply->{account}{username};
+			say "Password:\t".$reply->{account}{password};
+			say "Databases:\t".$reply->{account}{dbname};
+			say "";
+			if ($reply->{admin_url}) {
+				say "You can change the password and create databases at:";
+				say $reply->{admin_url};
+				say "";
+			}
+		}
+	},
+};
+
+$commands{"reset-password"} = {
+	description => "reset account password for a service",
+
+	usage => "<service> [user]",
+
+	require => ["reset_password"],
+
+	func => sub {
+		my %req;
+		$req{service} = shift(@ARGV);
+		$req{user} = shift(@ARGV) // $rpc->{auth_info}{user};
+
+		if (defined $req{service}) {
+			confirm("Reset $req{service} password for '\e[1m$req{user}\e[m'?");
+			$reply = $rpc->reset_password(%req);
+			if (defined $reply->{account}{password}) {
+				say "Password for '$reply->{account}{username}' has been reset.";
+				say "";
+				say "New password:\t".$reply->{account}{password};
+				say "";
+			}
+			if (defined $reply->{msg}) {
+				say $reply->{msg};
+				say "";
+			}
+		} else {
+			warn "Error: service not specified\n";
+
+			$reply = $rpc->reset_password(service => "");
+			my @services = @{$reply->{services}};
+			say "Services: ", join(", ", @services);
+
+			exit 2;
+		}
+	},
+};
+
+$commands{"whoami"} = {
+	func => sub {
+		$reply = $rpc->whoami;
+		say $reply->{user};
+	},
+};
+
+
+GetOptions(
+	"y|yes!"	=> \$yes,
+	"z|authz=s"	=> \$user,
+);
+
+$Term::ReadPassword::USE_STARS = 1;
+
+$Cluenet::Rpc::DEBUG = $ENV{RPC_DEBUG};
+$rpc = Cluenet::Rpc::Client->new(raise_errors => 1);
+
+$rpc->{sasl_callbacks}{user} = \$user;
+
+$rpc->{sasl_callbacks}{password} = sub {
+	read_password("Password: ");
+};
+
+$rpc->connect($host, $port);
+$rpc->authenticate();
+
+my $cmd = shift(@ARGV) // "help";
+
+if (defined $commands{$cmd}) {
+	$commands{$cmd}->{func}->(@ARGV);
+} else {
+	die "Unknown command '$cmd'.\n";
+}

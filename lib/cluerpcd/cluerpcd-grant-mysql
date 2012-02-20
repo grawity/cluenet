@@ -1,0 +1,103 @@
+#!/usr/bin/env perl
+use common::sense;
+use Cluenet::Common;
+use Cluenet::Rpc::Server;
+use DBI;
+
+use constant {
+	MYSQL_USER	=> "root",
+	MYSQL_PW_FILE	=> "/cluenet/etc/private/mysql-root",
+	PHPMYADMIN_URL	=> "https://equal.cluenet.org/phpmyadmin/",
+};
+
+my @system_users = ("root", "debian-sys-maint", "phpmyadmin");
+
+sub authorize {
+	use Cluenet::Kerberos;
+	my ($auth, $target) = @_;
+	return ($target eq $auth->{user}
+		|| $auth->{user} eq 'root'
+		|| krb5_kuserok($target, $auth->{authn}));
+}
+
+sub update_account {
+	my ($user, $existing) = @_;
+
+	if ($user =~ /[%_]/) {
+		# FIXME proper check
+		return {failure,
+			error => "invalid characters in user name"};
+	}
+
+	my $reply = eval {
+		my $rootpw = file_read_line(MYSQL_PW_FILE);
+
+		my $db = DBI->connect("DBI:mysql:host=localhost", MYSQL_USER, $rootpw,
+				{PrintError => 0, RaiseError => 1});
+
+		my $userhost = "localhost";
+		my $userpw = gen_passwd();
+		my $dbname = "$user\\_%";
+
+		my $userid = "'${user}'\@'${userhost}'";
+		my $grant;
+
+		if ($existing) {
+			$grant = "USAGE ON *.*";
+
+			my $users = $db->selectall_arrayref(
+							"SELECT User, Host
+							FROM mysql.user
+							WHERE User = '$user'
+							AND Host = '$userhost'");
+			if (!@$users) {
+				return {failure,
+					error => "access denied: account does not exist"};
+			}
+
+		}
+		else {
+			$grant = "ALL on `$dbname`.*";
+		}
+
+		$db->do("GRANT $grant TO $userid IDENTIFIED BY '$userpw'");
+
+		return {success,
+			msg => "Use 'mysqlpasswd' or phpMyAdmin' to change your password.",
+			account => {
+				username => $user,
+				hostmask => $userhost,
+				password => $userpw,
+				dbname => "${user}_*"},
+			admin_url => PHPMYADMIN_URL};
+	};
+
+	if ($@) {
+		return {failure,
+			error => "$@",
+			msg => "MySQL connection failed"};
+	} else {
+		return $reply;
+	}
+}
+
+rpc_helper_main {
+	my ($auth, %args) = @_;
+
+	if (!defined $args{user}) {
+		return {failure,
+			error => "missing parameter"};
+	}
+
+	if (!authorize($auth, $args{user})) {
+		return {failure,
+			error => "access denied: can only modify own account"};
+	}
+
+	if ($args{user} ~~ @system_users) {
+		return {failure,
+			error => "access denied: use administration tools to modify this account"};
+	}
+
+	return update_account($args{user}, $args{existing});
+}

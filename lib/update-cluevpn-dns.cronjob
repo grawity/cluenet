@@ -1,0 +1,2 @@
+#!/bin/bash
+exec /cluenet/bin/silent /cluenet/sbin/cluevpn-mkzones

@@ -1,0 +1,248 @@
+#!/usr/bin/env perl
+BEGIN { push @INC, "/cluenet/lib/perl5" }
+use common::sense;
+use Authen::SASL;
+use Cluenet::Common;
+use Cluenet::Kerberos;
+use Cluenet::Rpc;
+use Cluenet::Rpc::Server;
+
+my %funcs;
+my $server;
+
+sub handle_request {
+	my ($server, $request) = @_;
+
+	my $method = $request->{method};
+	my $args = $request->{args};
+	my @args;
+
+	if (!defined $method or !defined $args) {
+		return {failure,
+			error => "rpc: missing func or args"};
+	}
+
+	given (ref $args) {
+		when ('ARRAY') {
+			@args = @$args;
+		}
+		when ('HASH') {
+			@args = %$args;
+		}
+		default {
+			return {failure,
+				error => "rpc: invalid args type"};
+		}
+	}
+
+	my $func = $funcs{$method};
+
+	if (!defined $func) {
+		return {failure,
+			error => "rpc: unknown function"};
+	}
+
+	my $reply = eval { $func->($server, @args) };
+
+	if ($@) {
+		return {failure,
+			error => "rpc: internal error: $@"};
+	} else {
+		return $reply;
+	}
+}
+
+# SASL authentication
+
+sub authorize_user {
+	my ($server, $user, $authuser) = @_;
+	given ($server->{sasl_obj}->mechanism) {
+		when ("GSSAPI") {
+			return krb5_kuserok($user, $authuser);
+		}
+		default {
+			return krb5_canonuser($user) eq $authuser;
+		}
+	}
+}
+
+# RPC functions
+
+$funcs{"functions"} = sub {
+	my @funcs = sort keys %funcs;
+
+	return {success,
+		functions => \@funcs};
+};
+
+$funcs{"authenticate"} = sub {
+	my ($server, %args) = @_;
+
+	my @mechs = qw(GSSAPI PLAIN);
+
+	if ($server->{logged_in}) {
+		return {failure,
+			error => "authentication failed: already logged in"};
+	}
+
+	my $response = b64_decode($args{data});
+	my $challenge;
+
+	if (defined $server->{sasl_obj}) {
+		if (defined $args{mech} && uc($args{mech}) ne $server->{sasl_mech}) {
+			return {failure,
+				error => "invalid argument: cannot change mechanism during authentication"};
+		}
+		$challenge = $server->{sasl_obj}->server_step($response);
+	}
+	else {
+		if (!exists $args{mech}) {
+			return {failure,
+				error => "invalid argument: missing mechanism"};
+		}
+
+		if (!defined $args{mech}) {
+			return {success,
+				mechanisms => \@mechs};
+		}
+
+		my $mech = uc($args{mech});
+
+		unless ($mech ~~ @mechs) {
+			return {failure,
+				error => "authentication failed: unsupported mechanism"};
+		}
+
+		my %callbacks = map {$_ => [$server->{sasl_callbacks}{$_}, $server]}
+				keys %{$server->{sasl_callbacks}};
+		my $sasl = Authen::SASL->new(mechanism => $mech, callback => \%callbacks);
+		$server->{sasl_obj} = $sasl->server_new($server->{sasl_service}, getfqdn());
+		$server->{sasl_mech} = $mech;
+		$server->{sasl_steps} = 0;
+
+		$server->{logged_in} = 0;
+		$server->{user} = "*";
+		$server->{auth_user} = undef;
+
+		$challenge = $server->{sasl_obj}->server_start(grep {length} $response);
+	}
+
+	if (++$server->{sasl_steps} >= 50) {
+		return {failure,
+			error => "authentication failed: infinite loop"};
+	}
+	elsif ($server->{sasl_obj}->need_step) {
+		return {success,
+			finished => 0,
+			data => b64_encode($challenge)};
+	}
+	elsif ($server->{sasl_obj}->code == 0) {
+		$server->{logged_in} = 1;
+		return {success,
+			finished => 1,
+			user => $server->{user},
+			identity => $server->{auth_user}};
+	}
+	else {
+		$server->stop_loop;
+		my @err = $server->{sasl_obj}->error;
+		return {failure,
+			error => "authentication failed: $err[1]",
+			data => \@err};
+	}
+};
+
+$funcs{"whoami"} = sub {
+	my ($server, %args) = @_;
+	return {success,
+		user => $server->{user},
+		identity => $server->{auth_user}};
+};
+
+$funcs{"grant_mysql"} = sub {
+	my ($server, %args) = @_;
+
+	if (!$server->{logged_in}) {
+		return {failure,
+			error => "anonymous access denied"};
+	}
+
+	$args{existing} = 0;
+
+	return $server->spawn_helper("cluerpcd-grant-mysql", %args);
+};
+
+$funcs{"reset_password"} = sub {
+	my ($server, %args) = @_;
+
+	my %services = (
+		mysql => sub {
+			my %fargs = (user => $args{user}, existing => 1);
+			return $server->spawn_helper("cluerpcd-grant-mysql", %fargs);
+		},
+		samba => sub {
+			my %fargs = (user => $args{user});
+			return $server->spawn_helper("cluerpcd-smbpasswd", %fargs);
+		},
+	);
+
+	if (!$server->{logged_in}) {
+		return {failure,
+			error => "anonymous access denied"};
+	}
+
+	if (!defined $args{service}) {
+		return {failure,
+			error => "missing parameter"};
+	} elsif ($args{service} eq "") {
+		return {success,
+			services => [keys %services]};
+	} elsif (!defined $args{user}) {
+		return {failure,
+			error => "missing parameter"};
+	} elsif (exists $services{$args{service}}) {
+		return $services{$args{service}}->();
+	} else {
+		return {failure,
+			error => "unknown service"};
+	}
+};
+
+# Main loop
+
+$server = Cluenet::Rpc::Server->new;
+
+$server->{sasl_callbacks} = {
+	authorize => sub {
+		my ($server, $authzid, $authnid) = @_;
+		if (authorize_user($server, $authzid, $authnid)) {
+			$server->{user} = $authzid;
+			$server->{auth_user} = $authnid;
+			return 1;
+		} else {
+			return 0;
+		}
+	},
+	canonuser => sub {
+		my ($server, $type, $_a, $flags, $user) = @_;
+		if ($type eq 'AUTHID') {
+			return krb5_canonuser($user);
+		}
+		else {
+			return $user;
+		}
+	},
+	checkpass => sub {
+		my ($server, $user, $pass) = @_;
+		if (krb5_checkpass($server, $user, $pass)) {
+			$server->{auth_user} = $user;
+			return 1;
+		} else {
+			return 0;
+		}
+	},
+};
+
+$server->connect_stdio;
+$server->set_handler(\&handle_request);
+$server->loop;

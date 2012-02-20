@@ -1,6 +1,5 @@
-; /etc/krb5.conf - krb5.conf(5) - Kerberos configuration
+; /etc/krb5.conf - krb5.conf(5) - Cluenet Kerberos configuration
 ; vim: ft=dosini
-
 
 [libdefaults]
 

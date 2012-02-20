@@ -1,0 +1,26 @@
+# vi: ft=perl
+push @common,
+	{owner => '@', type => "SOA", data => [
+		"equal.cluenet.org.",		# mname
+		"grawity.nullroute.eu.org.",	# rname
+		time(),		# serial
+		"1h",		#refresh
+		"1h",		#retry
+		"1d",		#expire
+		"30m",		#minttl
+	]},
+	{owner => '@', type => "NS", data => ["equal.cluenet.org."]},
+	;
+
+push @forward,
+	{owner => "jercos", type => "A", data => ["10.156.1.131"]},
+	;
+
+push @reverse,
+	{ip => "10.156.210.1",  type => "PTR", data => ["equal.cluenet.org."]},
+	{ip => "10.156.210.56", type => "PTR", data => ["eta.cluenet.org."]},
+	;
+
+push @ignore,
+	"10.156.210.56",
+	;
