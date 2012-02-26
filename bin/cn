@@ -573,14 +573,17 @@ $commands{"server:create"} = sub {
 
 	my $host = shift;
 	my $owner;
+	my @address;
 
 	Getopt::Long::GetOptionsFromArray(\@_,
-		"o|owner=s" => \$owner);
+		"o|owner=s" => \$owner,
+		"a|address=s" => \@address);
 
 	usage("server:create <hostname>") unless $host;
 
 	$ldap = connect_auth;
 	$owner //= whoami;
+	@address || push @address, "0.0.0.0";
 
 	my $fqdn = make_server_fqdn($host);
 	print "Creating server: $fqdn (owned by $owner)\n";
@@ -598,7 +601,7 @@ $commands{"server:create"} = sub {
 		isOfficial => "FALSE",
 		userAccessible => "TRUE",
 		authorizedService => [SHELL_SERVICES],
-		ipHostNumber => "0.0.0.0",
+		ipHostNumber => \@address,
 	);
 	print "+ $dn\n";
 	$res = $ldap->add($dn, attr => [%entry]);
