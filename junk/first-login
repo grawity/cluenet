@@ -1,0 +1,88 @@
+#!/bin/bash
+# Cluenet new user greeter script.
+# Allows configuration of mail forward, that kind of stuff.
+# Status: working; only two tasks for now -- homedir perms, ~/.forward
+
+c_up() { printf '\e[%dA' "${1:-1}"; }
+c_down() { printf '\e[%dB' "${1:-1}"; }
+
+prompt() {
+	local prompt=$1
+	shift
+	prompt=$'\001\e[;32m\002= \001\e[;1m\002'"$prompt "$'\001\e[m\002'
+	read -ep "$prompt" "$@"
+	printf '\e[m'
+}
+
+log_task() {
+	printf '\n'
+	printf '\e[35m= \e[;1m%s\e[m\n' "$@"
+	printf '\n'
+}
+log_done() {
+	printf '\e[1;32m= \e[m%s\n' "$@"
+}
+log_skip() {
+	printf '\e[35m= \e[m%s\n' "Skipped."
+}
+logs() { local l; while read -r l; do log "$l"; done; }
+
+FQDN=$(hostname --fqdn)
+
+echo "Welcome to Equal. Press [Enter] to skip a question."
+
+## $HOME access
+log_task "Home directory access"
+(
+	echo "Do you want your home directory to be accessible to other users?"
+	echo ""
+	echo -e "Use \e[4mchmod\e[m and \e[4msetfacl\e[m to modify access rights."
+	c_up 2
+	prompt 'public [Yn]' public
+	c_down
+
+	case ${public,,} in
+		y)
+			setfacl --set "u::rwx,g::rx,o::rx" ~
+			changed=true
+			;;
+		n)
+			setfacl --set "u::rwx,g::-,o::-,u:www-data:x,g:mail:x" ~
+			changed=true
+			;;
+		*)
+			changed=false
+	esac
+
+	if $changed; then
+		log_done "ACLs for $HOME updated"
+		getfacl -tp ~ | grep '^[^#]'
+	else
+		log_skip
+	fi
+)
+
+## ~/.forward
+log_task "Mail forwarding"
+(
+	oldfw=$(sed 1q ~/.forward 2>/dev/null)
+	echo -e "Do you want mail for \e[4m$USER@$FQDN\e[m to be forwarded elsewhere?"
+	echo ""
+	echo -e "You can change this by editing \e[4m~/.forward\e[m in your home directory."
+	c_up 2
+	prompt 'forward to:' -i "$oldfw" newfw
+	c_down
+
+	if [[ $fw == $oldfw ]]; then
+		log_skip
+	elif [[ $fw ]]; then
+		echo "$fw" > ~/.forward
+		chmod 0644 ~/.forward
+		log_done "~/.forward updated"
+	elif [[ -f ~/.forward ]]; then
+		rm -f ~/.forward
+		log_done "~/.forward removed"
+	else
+		log_skip
+	fi
+)

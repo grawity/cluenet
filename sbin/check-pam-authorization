@@ -1,0 +1,36 @@
+#!/usr/bin/perl
+# Checks if user passes PAM acct_mgmt checks for given service.
+# <grawity@gmail.com>
+
+use strict;
+use Authen::PAM;
+use constant DEFAULT_SERVICE => "other";
+
+sub check {
+	my ($user, @services) = @_;
+	for my $s (@services) {
+		my $pamh = Authen::PAM->new($s, $user);
+		$pamh->pam_set_item(PAM_RHOST, $ENV{IP}) if defined $ENV{IP};
+		if ($pamh->pam_acct_mgmt(PAM_SILENT) == 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+if ($ENV{AUTHTYPE} eq "PASS") {
+	exit 1;
+}
+
+my ($user, $service, @services);
+
+$user = shift(@ARGV);
+if (defined $user) {
+	$service = shift(@ARGV) // DEFAULT_SERVICE;
+} else {
+	chomp($user = <STDIN>);
+	chomp($service = <STDIN>);
+}
+@services = split / /, $service;
+
+exit(check($user, @services) ? 0 : 1);
