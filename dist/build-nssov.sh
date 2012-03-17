@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
-version='2.4.29'
+version=${1:-'2.4.30'}
 
 download() {
 	cd "$buildroot"
@@ -35,6 +35,6 @@ if (( UID )); then
 	package
 	echo "Run $0 as root to install system-wide."
 else
-	destdir="/cluenet/lib/nssov"
+	destdir="/cluenet/lib/$(uname -m)/nssov"
 	package
 fi
