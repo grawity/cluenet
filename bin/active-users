@@ -11,7 +11,21 @@ else
 	echo "Users not logged in in the last $days days:"
 fi
 
-lastlog -u 1000- $args | {
-	read
-	sort
+
+lastlog -u 1000- $args |
+{ read; sort; } |
+{
+	skipped=0
+	while read -r line; do
+		read -r user _ <<< "$line"
+		if [[ -d /home/$user ]]; then
+			echo "$line"
+		else
+			(( ++skipped ))
+		fi
+	done
+
+	if (( skipped )); then
+		echo "($skipped users without home directories were skipped.)"
+	fi
 }
