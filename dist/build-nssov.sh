@@ -35,6 +35,7 @@ if (( UID )); then
 	package
 	echo "Run $0 as root to install system-wide."
 else
-	destdir="/cluenet/lib/$(uname -m)/nssov"
+	#destdir="/cluenet/lib/$(uname -m)/nssov"
+	destdir="/cluenet/lib/nssov"
 	package
 fi
