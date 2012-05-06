@@ -13,7 +13,8 @@ push @common,
 	;
 
 push @forward,
-	{owner => "jercos", type => "A", data => ["10.156.1.131"]},
+	{owner => "equal",	type => "A", data => ["10.156.210.1"]},
+	{owner => "jercos",	type => "A", data => ["10.156.1.131"]},
 	;
 
 push @reverse,
