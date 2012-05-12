@@ -1,14 +1,14 @@
-#!/usr/bin/perl
-# Checks if given user is listed in the LDAP access list for a service on this host.
-# <grawity@gmail.com>
+#!/usr/bin/env perl
+# check-ldap-acl - check if given user is listed in the LDAP access
+#   list for (this_host, given_service).
+# Cluenet specific.
 
+use warnings;
 use strict;
 use Net::LDAP;
 use Sys::Hostname;
-use constant {
-	LDAP_SERVER	=> "ldap://localhost:3890",
-	DEFAULT_SERVICE	=> "other",
-};
+
+my $ldap_server;
 
 sub usage {
 	warn "Usage: $0 <username> [<service>]\n";
@@ -27,7 +27,7 @@ sub check {
 	my $user_dn = "uid=$user,ou=people,dc=cluenet,dc=org";
 	my $acl_dn = "cn=$service,cn=svcAccess,cn=$fqdn,ou=servers,dc=cluenet,dc=org";
 
-	my $ldap = Net::LDAP->new(LDAP_SERVER, onerror => "die") or die "$!";
+	my $ldap = Net::LDAP->new($ldap_server, onerror => "die") or die "$!";
 
 	$ldap->bind;
 
@@ -44,7 +44,13 @@ sub check {
 	return 0;
 }
 
+if (-e "/etc/cluenet/has-ldap-mirror") {
+	$ldap_server = "ldap://localhost";
+} else {
+	$ldap_server = "ldap://ldap.cluenet.org";
+}
+
 my $user = shift(@ARGV) // usage();
-my $service = shift(@ARGV) // DEFAULT_SERVICE;
+my $service = shift(@ARGV) // "other";
 
 exit(check($user, $service) ? 0 : 1);

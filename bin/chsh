@@ -1,30 +1,41 @@
 #!/usr/bin/env perl
+# chsh - selects between shadow 'chsh' and Cluenet 'chsh'.
+# Cluenet specific.
+
+use warnings;
+use strict;
 use English;
 use Getopt::Long qw(:config no_ignore_case);
 use User::pwent;
 
+# TODO: Find directory
+my $CLUENET_DIR = "/cluenet";
+
+my $real_chsh = "/usr/bin/chsh.real";
+
+sub usage {
+	warn "Usage: $0 [-s <shell>]\n";
+	exit 2;
+}
+
 sub do_chsh {
 	my $shell = shift;
-	my @cmd = ();
+	my @cmd;
 	if ($UID >= 25000) {
-		@cmd = ("/cluenet/bin/cn", "user:chsh");
+		@cmd = ("$CLUENET_DIR/bin/cn", "user:chsh");
+	} else {
+		@cmd = ($real_chsh, "-s");
 	}
-	else {
-		@cmd = ("/usr/bin/chsh.real");
-	}
-	exec(@cmd, "-s", $shell) or die "exec: $!";
+	exec(@cmd, $shell) or die "exec: $!";
 }
 
 my $shell;
 
-GetOptions(
-	"s|shell=s" => \$shell
-	);
+GetOptions("s|shell=s" => \$shell) or usage();
 
 if ($shell) {
 	do_chsh($shell);
-}
-else {
+} else {
 	my $pw = getpwuid($UID);
 	print "Your current shell is ".$pw->shell."\n";
 	print "Enter the new value, or press ENTER for the default\n";

@@ -1,27 +1,34 @@
-#!/bin/bash
-# Lists currently open ports for current user.
-# <grawity@gmail.com>
+#!/usr/bin/env bash
+# myports - list currently open ports for current user
 
 if [[ $1 ]]; then
-	echo >&2 "Usage: myports"
+	echo "Usage: myports" >&2
 	exit 2
 fi
 
 format="%-5s %-32s %-16s %-7s %s\n"
 printf "$format" "PROTO" "ADDRESS" "PROGRAM" "PID" "USER"
-perl -e 'print "-"x79, "\n"'
+
+perl -E 'say "-"x79'
 
 netstat -lpte --numeric-hosts --numeric-ports 2>/dev/null |
 sed 1,2d |
-while read -r proto _ _ laddr raddr state user inode program; do
-	if (( UID == 0 )) || [[ $user == $LOGNAME ]]; then
-		lhost=${laddr%:*}	lport=${laddr##*:}
-		rhost=${raddr%:*}	rport=${raddr##*:}
-		pid=${program%%/*}	program=${program#*/}
-		[[ $lhost == *:* ]]	&& laddr="[$lhost]:$lport"
-		[[ $rhost == *:* ]]	&& raddr="[$rhost]:$rport"
-		printf "$format" "$proto" "$laddr" "$program" "$pid" "$user"
+{
+	count=0
+	while read -r proto _ _ laddr raddr state user inode program; do
+		if (( UID == 0 )) || [[ $user == $LOGNAME ]]; then
+			lhost=${laddr%:*}	lport=${laddr##*:}
+			rhost=${raddr%:*}	rport=${raddr##*:}
+			pid=${program%%/*}	program=${program#*/}
+			[[ $lhost == *:* ]]	&& laddr="[$lhost]:$lport"
+			[[ $rhost == *:* ]]	&& raddr="[$rhost]:$rport"
+			printf "$format" "$proto" "$laddr" "$program" "$pid" "$user"
+			(( ++count ))
+		fi
+	done
+	if (( count == 0 )); then
+		echo "No listening ports according to 'netstat'." >&2
 	fi
-done
+}
 
 #netstat -lpe --numeric-hosts --numeric-ports 2>/dev/null | awk "\$7 == \"$LOGNAME\" {printf \"$format\", \$1, \$4, \$9}"

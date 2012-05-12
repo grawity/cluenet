@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
-# mysqlpasswd - MySQL password change tool
+# mysqlpasswd - change the user's MySQL account password
+
 use warnings;
 use strict;
 use DBI;
@@ -34,8 +35,7 @@ my $user = shift(@ARGV) // getlogin();
 
 if ($usessl) {
 	$dbhost .= ":mysql_ssl=1";
-}
-elsif ($dbhost ne 'localhost') {
+} elsif ($dbhost ne 'localhost') {
 	# 'localhost' uses Unix sockets, is okay
 	warn "\e[1;31mWarning:\e[;1m Your password will be transmitted in clear text. To avoid this,\n";
 	warn "         enable SSL with the -s option, or change the password over SSH.\e[m\n";

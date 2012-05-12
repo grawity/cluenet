@@ -1,5 +1,6 @@
-#!/bin/bash
-# Lists users [not] logged in since ${days} days according to lastlog.
+#!/usr/bin/env bash
+# active-users, inactive-users -- lists users [not] logged in since
+#   ${days} days according to /var/log/lastlog.
 
 days=${1:-30}
 
