@@ -399,7 +399,7 @@ $commands{"acl"} = sub {
 		}
 	}
 	else {
-		$ldap = connect_anon;
+		$ldap = ldap_connect_anon;
 		for my $host (@hosts) {
 			# authz = authorizedService attributes
 			# acl = cn=svcAccess subentry
@@ -839,12 +839,12 @@ MISCELLANEOUS
 };
 
 $commands{"whoami"} = sub {
-
 	my $verbose = 0;
+
 	Getopt::Long::GetOptionsFromArray(\@_,
 		"v|verbose" => \$verbose);
 
-	$ldap = ldap_connect_auth();
+	$ldap = ldap_connect_auth;
 	my $resp = $ldap->who_am_i->response;
 	my $dn;
 	my $uid;
@@ -854,9 +854,16 @@ $commands{"whoami"} = sub {
 			$dn = $1;
 			$uid = $2;
 		}
+		when (/^dn:(uid=(.+),ou=people,dc=nullroute,dc=eu,dc=org)$/) {
+			$dn = $1;
+			$uid = $2.'@nullroute.eu.org';
+		}
 		when (/^u:(.+)$/) {
 			$dn = user_dn($1);
 			$uid = $1;
+		}
+		default {
+			say "unknown response $resp";
 		}
 	}
 	given ($uid) {
