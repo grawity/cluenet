@@ -1,12 +1,11 @@
 #!/usr/bin/env perl
-BEGIN { push @INC, "/cluenet/lib/perl5" }
+BEGIN { push @INC, ($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5" }
 use warnings;
 use strict;
 use feature "say";
 use feature "switch";
 
 use Authen::SASL;
-use Cluenet::Common;
 use Cluenet::LDAP;
 use Data::Dumper;
 use Getopt::Long;
