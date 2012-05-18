@@ -61,7 +61,7 @@ sub server_from_dn {
 }
 
 # Establish LDAP connection, authenticated or anonymous
-sub connect_auth {
+sub _connect_auth {
 	my %opts = @_;
 
 	my $ldap = Net::LDAP->new(LDAP_MASTER)
@@ -69,7 +69,7 @@ sub connect_auth {
 	if ($opts{tls}) {
 		# TODO: is cafile required to be here?
 		$ldap->start_tls(verify => "require",
-			cafile => "/etc/ssl/certs/Cluenet.pem")
+				cafile => "/etc/ssl/certs/Cluenet.pem")
 			or croak "$!";
 	}
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
@@ -79,7 +79,7 @@ sub connect_auth {
 	return $ldap;
 }
 
-sub connect_anon {
+sub _connect_anon {
 	my $ldap = Net::LDAP->new(LDAP_HOST)
 		or croak "$!";
 	$ldap->bind;
@@ -88,15 +88,13 @@ sub connect_anon {
 
 sub ldap_connect_auth {
 	our $LDAP_CONN_AUTH;
-
-	return $LDAP_CONN_AUTH //= connect_auth;
+	return $LDAP_CONN_AUTH //= _connect_auth;
 }
 
 sub ldap_connect_anon {
 	our $LDAP_CONN_AUTH;
 	our $LDAP_CONN_ANON;
-
-	return $LDAP_CONN_ANON //= $LDAP_CONN_AUTH // connect_anon;
+	return $LDAP_CONN_ANON //= $LDAP_CONN_AUTH // _connect_anon;
 }
 
 sub is_group_member {
