@@ -498,7 +498,7 @@ $commands{"server:admin"} = sub {
 			my ($owner, @admins, %changes);
 			for my $entry ($res->entries) {
 				$owner = user_from_dn($entry->get_value("owner"));
-				@admins = map {user_from_dn}
+				@admins = map {user_from_dn $_}
 					$entry->get_value("authorizedAdministrator");
 			}
 
@@ -548,7 +548,7 @@ $commands{"server:admin"} = sub {
 
 			for my $entry ($res->entries) {
 				my $owner = user_from_dn $entry->get_value("owner");
-				my @admins = sort map {user_from_dn}
+				my @admins = sort map {user_from_dn $_}
 					$entry->get_value("authorizedAdministrator");
 
 				print "$host\t$owner\t(owner)\n";
