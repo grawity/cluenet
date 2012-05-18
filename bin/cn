@@ -824,29 +824,49 @@ MISCELLANEOUS
 };
 
 $commands{"whoami"} = sub {
+	my $verbose = 0;
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"v|verbose" => \$verbose);
+
 	$ldap = connect_auth();
-	my $dn = $ldap->who_am_i->response;
+	my $resp = $ldap->who_am_i->response;
+	my $dn;
 	my $uid;
-	given ($dn) {
-		when (/^dn:uid=(.+),ou=people,dc=cluenet,dc=org$/) {
+	my $princ;
+	given ($resp) {
+		when (/^dn:(uid=(.+),ou=people,dc=cluenet,dc=org)$/) {
+			$dn = $1;
+			$uid = $2;
+		}
+		when (/^u:(.+)$/) {
+			$dn = user_dn($1);
 			$uid = $1;
 		}
 	}
-	say $dn;
 	given ($uid) {
 		when (/^(.+)@(.+?)$/) {
 			my $query = Net::DNS::Resolver->new->query("_kerberos.$2", "TXT");
 			if ($query) {
 				my $realm = (($query->answer)[0]->char_str_list)[0];
-				say "Foreign user '$1' from realm $realm";
+				say "Foreign user \"$1\" from realm $realm" if !$verbose;
+				$princ = "$1\@$realm";
 			}
 			else {
-				say "Foreign user '$1' from $2";
+				say "Foreign user \"$1\" from $2" if !$verbose;
+				$princ = "$1\@$2";
 			}
 		}
 		default {
-			say "Cluenet user '$uid'";
+			say "Cluenet user \"$uid\"" if !$verbose;
+			$princ = "$1\@CLUENET.ORG";
 		}
+	}
+	if ($verbose) {
+		say "LDAP authzid: $resp";
+		say "LDAP DN:      $dn";
+		say "Kerberos:     $princ";
+	} else {
+		say "dn: $dn";
 	}
 	return 0;
 };
