@@ -24,7 +24,14 @@ use constant {
 
 my $whoami;
 
-sub user_dn { "uid=".shift().",ou=people,dc=cluenet,dc=org" }
+sub user_dn {
+	my ($user) = @_;
+	if ($user =~ /^\w+=/) {
+		return $user;
+	} else {
+		return "uid=${user},ou=people,dc=cluenet,dc=org";
+	}
+}
 
 sub server_dn { "cn=".make_server_fqdn(shift).",ou=servers,dc=cluenet,dc=org" }
 
@@ -44,11 +51,13 @@ sub from_dn {
 }
 
 sub user_from_dn {
-	from_dn(shift, "ou=people,dc=cluenet,dc=org", 1);
+	my $dn = shift;
+	return ($dn =~ /^\w+=/) ? from_dn($dn, "ou=people,dc=cluenet,dc=org", 1) : $dn;
 }
 
 sub server_from_dn {
-	from_dn(shift, "ou=servers,dc=cluenet,dc=org", 1);
+	my $dn = shift;
+	return ($dn =~ /^\w+=/) ? from_dn($dn, "ou=servers,dc=cluenet,dc=org", 1) : $dn;
 }
 
 # Establish LDAP connection, authenticated or anonymous

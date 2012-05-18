@@ -8,7 +8,7 @@ use feature "switch";
 use Authen::SASL;
 use Cluenet::LDAP;
 use Data::Dumper;
-use Getopt::Long;
+use Getopt::Long qw(:config posix_default no_ignore_case);
 use Net::DNS;
 use Net::IP;
 use Net::LDAP;
@@ -473,9 +473,14 @@ $commands{"server:list"} = sub {
 $commands{"server:admin"} = sub {
 	my (@hosts, @add, @del);
 
+	my $show_princ = 0;
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"p|principal" => \$show_princ);
+
 	for (@_) {
-		when (/^\+(.+)$/)	{ push @add, $1 }
-		when (/^-(.+)$/)	{ push @del, $1 }
+		when (/^\+(.+)$/)	{ push @add, user_from_dn($1) }
+		when (/^-(.+)$/)	{ push @del, user_from_dn($1) }
 		default			{ push @hosts, $_ }
 	}
 
@@ -546,12 +551,23 @@ $commands{"server:admin"} = sub {
 			}
 
 			for my $entry ($res->entries) {
-				my $owner = user_from_dn $entry->get_value("owner");
-				my @admins = sort map {user_from_dn $_}
-					$entry->get_value("authorizedAdministrator");
+				my $fmt = "%-15s\t%s\n";
+				my $owner = $entry->get_value("owner");
+				my @admins = $entry->get_value("authorizedAdministrator");
 
-				print "$host\t$owner\t(owner)\n";
-				print "$host\t$_\n" for @admins;
+				$owner = user_from_dn $owner;
+				@admins = sort map {user_from_dn $_} @admins;
+
+				if ($show_princ) {
+					$owner =~ s/$/\@CLUENET.ORG/;
+					@admins =
+						grep {/@/ or s/$/\@CLUENET.ORG/}
+						grep {s/(@)(.+)/$1.uc($2)/e or 1}
+						@admins;
+				}
+
+				printf $fmt, $host, $owner.' (owner)';
+				printf $fmt, $host, $_ for @admins;
 			}
 		}
 	}
