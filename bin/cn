@@ -327,106 +327,108 @@ $commands{"access"} = sub {
 };
 
 $commands{"acl"} = sub {
-	usage("acl <host>...") unless @_;
+	usage("acl <host>... [+-]<service>...") unless @_;
 
-	$ldap = connect_anon;
 
+	my (@hosts, @add, @del);
 	my $err = 0;
-	for my $host (@_) {
-		# authz = authorizedService attributes
-		# acl = cn=svcAccess subentry
-		my ($res, %services, @svcs_authz, @svcs_acl);
 
-		my $dn = server_dn($host);
-		$res = $ldap->search(base => $dn, scope => "base",
-			filter => q(objectClass=*), attrs => ["authorizedService"]);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
-
-		for my $entry ($res->entries) {
-			push @svcs_authz, $entry->get_value("authorizedService");
-		}
-
-		$dn = "cn=svcAccess,".server_dn($host);
-		$res = $ldap->search(base => $dn, scope => "one",
-			filter => q(objectClass=groupOfNames), attrs => ["cn"]);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
-
-		for my $entry ($res->entries) {
-			push @svcs_acl, $entry->get_value("cn");
-		}
-
-		# create a hash of $service => [has_authz, has_acl]
-		%services = map {$_ => [1, undef]} @svcs_authz;
-		$services{$_}->[1] = 1 for @svcs_acl;
-
-		for my $svc (sort keys %services) {
-			my ($has_authz, $has_acl) = @{$services{$svc}};
-			if (!$has_authz) {
-				warn "warning: service '$svc' not listed as authorizedService\n";
-			}
-			if (!$has_acl) {
-				warn "warning: service '$svc' does not have an ACL\n";
-			}
-			print "$host/$svc\n";
-		}
-	}
-};
-
-$commands{"acl:create"} = sub {
-	usage("acl:create <host/service>...") unless @_;
-
-	$ldap = connect_auth;
-
-	my $err = 0;
 	for (@_) {
-		my ($host, $service) = to_hostservice_safe($_);
-
-		my ($res, $dn, %entry);
-
-		print "Creating ACL: $host/$service\n";
-
-		$dn = "cn=$service,cn=svcAccess,".server_dn($host);
-		%entry = (
-			objectClass => ["groupOfNames"],
-			cn => $service,
-			member => [user_dn(whoami)],
-		);
-		$res = $ldap->add($dn, attr => [%entry]);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
-
-		$dn = server_dn($host);
-		%entry = (
-			authorizedService => $service,
-		);
-		$res = $ldap->modify($dn, add => \%entry);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+		if (m!^\+(.+)$!) {
+			push @add, $1;
+		}
+		elsif (m!^-(.+)$!) {
+			push @del, $1;
+		}
+		else {
+			push @hosts, $_;
+		}
 	}
-	return $err;
-};
 
-$commands{"acl:delete"} = sub {
-	usage("acl:delete <host/service>...") unless @_;
+	if (@add or @del) {
+		$ldap = connect_auth;
+		for my $host (@hosts) {
+			for my $service (@add) {
+				my ($res, $dn, %entry);
 
-	$ldap = connect_auth;
+				print "Creating ACL: $host/$service\n";
 
-	my $err = 0;
-	for (@_) {
-		my ($host, $service) = to_hostservice_safe($_);
-		my ($dn, $res, %entry);
+				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
+				%entry = (
+					objectClass => ["groupOfNames"],
+					cn => $service,
+					member => [user_dn(whoami)],
+				);
+				$res = $ldap->add($dn, attr => [%entry]);
+				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
 
-		print "Deleting ACL: $host/$service\n";
+				$dn = server_dn($host);
+				%entry = (
+					authorizedService => $service,
+				);
+				$res = $ldap->modify($dn, add => \%entry);
+				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			}
+			for my $service (@del) {
+				my ($dn, $res, %entry);
 
-		$dn = "cn=$service,cn=svcAccess,".server_dn($host);
-		$res = $ldap->delete($dn);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				print "Deleting ACL: $host/$service\n";
 
-		$dn = server_dn($host);
-		%entry = (
-			authorizedService => $service,
-		);
-		$res = $ldap->modify($dn, delete => \%entry);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
+				$res = $ldap->delete($dn);
+				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+
+				$dn = server_dn($host);
+				%entry = (
+					authorizedService => $service,
+				);
+				$res = $ldap->modify($dn, delete => \%entry);
+				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			}
+		}
 	}
+	else {
+		$ldap = connect_anon;
+		for my $host (@hosts) {
+			# authz = authorizedService attributes
+			# acl = cn=svcAccess subentry
+			my ($res, %services, @svcs_authz, @svcs_acl);
+
+			my $dn = server_dn($host);
+			$res = $ldap->search(base => $dn, scope => "base",
+				filter => q(objectClass=*), attrs => ["authorizedService"]);
+			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+
+			for my $entry ($res->entries) {
+				push @svcs_authz, $entry->get_value("authorizedService");
+			}
+
+			$dn = "cn=svcAccess,".server_dn($host);
+			$res = $ldap->search(base => $dn, scope => "one",
+				filter => q(objectClass=groupOfNames), attrs => ["cn"]);
+			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+
+			for my $entry ($res->entries) {
+				push @svcs_acl, $entry->get_value("cn");
+			}
+
+			# create a hash of $service => [has_authz, has_acl]
+			%services = map {$_ => [1, undef]} @svcs_authz;
+			$services{$_}->[1] = 1 for @svcs_acl;
+
+			for my $svc (sort keys %services) {
+				my ($has_authz, $has_acl) = @{$services{$svc}};
+				if (!$has_authz) {
+					warn "warning: service '$svc' not listed as authorizedService\n";
+				}
+				if (!$has_acl) {
+					warn "warning: service '$svc' does not have an ACL\n";
+				}
+				print "$host/$svc\n";
+			}
+		}
+	}
+
 	return $err;
 };
 
@@ -789,11 +791,10 @@ $commands{"help"} = sub {
 	print qq{Usage: cluenet <command>
 
 ACCESS LISTS
-	read	access <host/service>...
-	modify	access <host/service>... [+-]<user>...
+	show	access <host/service>...
+	grant	access <host/service>... [+-]<user>...
 	list	acl <host>...
-	create	acl:create <host/service>...
-	delete	acl:delete <host/service>...
+	create	acl <host>... [+-]<user>...
 
 USER ACCOUNTS
 	view	user <user>...
