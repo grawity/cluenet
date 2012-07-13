@@ -729,16 +729,17 @@ $commands{"user:dump"} = sub {
 
 $commands{"user:chsh"} = sub {
 	my $shell = shift;
-	if ($shell && $shell eq '-s') { $shell = shift; }
+
+	if ($shell && $shell eq '-s') {
+		$shell = shift;
+	}
 
 	if (defined $shell) {
 		if (!$shell) {
 			die "error: shell not specified\n";
-		}
-		elsif ($shell !~ m!^/.+!) {
+		} elsif ($shell !~ m!^/.+!) {
 			die "error: shell must be an absolute filesystem path\n";
-		}
-		elsif ($shell !~ m!^/bin/(ba)?sh$!) {
+		} elsif ($shell !~ m!^/bin/(ba)?sh$!) {
 			warn "warning: shell might not be available on other servers\n";
 		}
 
