@@ -62,12 +62,12 @@ sub format_address {
 	}
 }
 
-# Split "host/service" arg
-sub to_hostservice {
+sub parse_hostservice {
 	my ($host, $service, $rest) = split /\//, shift, 3;
 	return (make_server_fqdn($host), $service, $rest);
 }
-sub to_hostservice_safe {
+
+sub parse_hostservice_safe {
 	my ($host, $service, $rest) = split /\//, shift, 3;
 	unless ($host and $service) {
 		die "syntax error: empty host or service: '$host/$service'\n";
@@ -237,26 +237,77 @@ sub usage {
 
 ### User interface commands
 
+sub dn_for_user {
+	return user_dn(shift);
+}
+
+sub dn_for_server {
+	return server_dn(shift);
+}
+
+sub dn_for_service_acl {
+	my ($host, $service) = @_;
+	return "cn=".$service.",cn=svcAccess,".dn_for_server($host);
+}
+
+sub mgmt_access_get_users {
+	my ($ldap, $host, $service) = @_;
+	my $dn = dn_for_service_acl($host, $service);
+	my $res = $ldap->search(
+		base => $dn,
+		scope => "base",
+		filter => q(objectClass=*),
+		attrs => ["member"]);
+	if ($res->is_error) {
+		warn ldap_errmsg($res, $dn);
+		return undef;
+	}
+	my @users;
+	for my $entry ($res->entries) {
+		@users = map {user_from_dn $_} $entry->get_value("member");
+	}
+	return @users;
+}
+
+sub mgmt_access_modify {
+	my ($ldap, $host, $service, %args) = @_;
+	my $dn = dn_for_service_acl($host, $service);
+	my $addusers = $args{add} // [];
+	my $delusers = $args{delete} // [];
+	my %changes = ();
+	if (@$addusers) {
+		$changes{add} = {member => [map {dn_for_user $_} @$addusers]};
+	}
+	if (@$delusers) {
+		$changes{delete} = {member => [map {dn_for_user $_} @$delusers]};
+	}
+	if (%changes) {
+		my $res = $ldap->modify($dn, %changes);
+		if ($res->is_error) {
+			warn ldap_errmsg($res, $dn);
+			return undef;
+		}
+	}
+	return 1;
+}
+
 $commands{"access"} = sub {
 	my (@services, @add, @del);
 
 	for (@_) {
 		if (m!/!) {
-			my ($h, $s) = to_hostservice_safe($_);
+			my ($h, $s) = parse_hostservice_safe($_);
 			if ($s eq 'shell') {
 				push @services, [$h, $_] for SHELL_SERVICES;
 			} else {
 				push @services, [$h, $s];
 			}
-		}
-		elsif (m!^\+(.+)$!) {
+		} elsif (m!^\+(.+)$!) {
 			push @add, $1;
-		}
-		elsif (m!^-(.+)$!) {
+		} elsif (m!^-(.+)$!) {
 			push @del, $1;
-		}
-		else {
-			warn "invalid argument: $_\n";
+		} else {
+			warn "Invalid argument: $_\n";
 		}
 	}
 
@@ -266,60 +317,25 @@ $commands{"access"} = sub {
 		$ldap = connect_auth;
 		for (@services) {
 			my ($host, $service) = @$_;
-			my $group = "cn=$service,cn=svcAccess,".server_dn($host);
-
-			my $res = $ldap->search(base => $group, scope => "base",
-				filter => q(objectClass=*), attrs => ["member"]);
-			if ($res->is_error) {
-				warn ldap_errmsg($res, $group);
-				next;
-			}
-
-			my (@users, @add_svc, @del_svc, %changes);
-			for my $entry ($res->entries) {
-				@users = map {user_from_dn $_} $entry->get_value("member");
-			}
-			@add_svc = grep {not $_ ~~ @users} @add;
-			@del_svc = grep {$_ ~~ @users} @del;
-
-			if (@add_svc) {
-				$changes{add} = {
-					member => [map {user_dn $_} @add_svc],
-				};
-				print "$host/$service: Adding: ".join(", ", @add_svc)."\n";
-			}
-			if (@del_svc) {
-				$changes{delete} = {
-					member => [map {user_dn $_} @del_svc],
-				};
-				print "$host/$service: Removing: ".join(", ", @del_svc)."\n";
-			}
-
+			my @users = mgmt_access_get_users($ldap, $host, $service);
+			my @add_svc = grep {not $_ ~~ @users} @add;
+			my @del_svc = grep {$_ ~~ @users} @del;
 			if (@add_svc or @del_svc) {
-				my $res = $ldap->modify($group, %changes);
-				$res->is_error and warn ldap_errmsg($res, $group);
+				say "$host/$service ".join(" ",
+					(map {"+$_"} @add_svc),
+					(map {"-$_"} @del_svc));
+				mgmt_access_modify($ldap, $host, $service,
+					add => \@add_svc, delete => \@del_svc);
 			} else {
-				print "$host/$service: Nothing to do\n";
+				say "$host/$service: nothing to do";
 			}
 		}
 	} else {
 		$ldap = connect_anon;
 		for (@services) {
 			my ($host, $service) = @$_;
-			my $group = "cn=$service,cn=svcAccess,".server_dn($host);
-
-			my $res = $ldap->search(base => $group, scope => "base",
-				filter => q(objectClass=*), attrs => ["member"]);
-			if ($res->is_error) {
-				warn ldap_errmsg($res, $group);
-				next;
-			}
-
-			for my $entry ($res->entries) {
-				my @users = sort map {user_from_dn $_}
-						$entry->get_value("member");
-				print "$host/$service\t$_\n" for @users;
-			}
+			my @users = mgmt_access_get_users($ldap, $host, $service);
+			print "$host/$service\t$_\n" for sort @users;
 		}
 	}
 };
