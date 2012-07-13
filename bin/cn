@@ -2,8 +2,7 @@
 BEGIN { push @INC, ($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5" }
 use warnings;
 use strict;
-use feature "say";
-use feature "switch";
+use feature qw(say state switch);
 
 use Authen::SASL;
 use Cluenet::LDAP;
