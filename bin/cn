@@ -19,7 +19,6 @@ use Text::Format;
 my $ldap;
 my $cmd;
 my $exit;
-my $my_name;
 my %commands;
 
 use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
@@ -119,14 +118,13 @@ sub connect_anon { goto &Cluenet::LDAP::ldap_connect_anon; }
 
 # Get and cache LDAP authzid
 sub whoami {
-	if (!defined $my_name) {
-		$my_name = $ldap->who_am_i->response;
-		$my_name =~ s/^u://;
-		$my_name =~ s/^dn:uid=(.+?),.*$/$1/;
-		# cross-realm
-		$my_name =~ s/\@nullroute\.eu\.org$//;
+	state $me;
+	if (!defined $me) {
+		$me = $ldap->who_am_i->response;
+		$me =~ s/^u://;
+		$me =~ s/^dn:uid=(.+?),.*$/$1/;
 	}
-	return $my_name;
+	return $me;
 }
 
 # Call `ldapsearch` to dump raw LDIF
