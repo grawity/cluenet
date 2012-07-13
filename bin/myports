@@ -30,5 +30,3 @@ sed 1,2d |
 		echo "No listening ports according to 'netstat'." >&2
 	fi
 }
-
-#netstat -lpe --numeric-hosts --numeric-ports 2>/dev/null | awk "\$7 == \"$LOGNAME\" {printf \"$format\", \$1, \$4, \$9}"
