@@ -727,52 +727,6 @@ $commands{"user:dump"} = sub {
 	return 0;
 };
 
-$commands{"user:acs"} = sub {
-	if (@_) {
-		my %changes = ();
-		for (@_) {
-			my ($key, $value) = /^(.+)=(\w+)?$/
-				or die "syntax error: $_\n";
-			$value =~ /^(anon|user|none|default)?$/
-				or die "error: valid values are: anon user none default\n";
-			$key = "acs".$key;
-			$changes{lc $key} = $value || "default";
-		}
-
-		my (%replace, @delete);
-		for my $key (keys %changes) {
-			if ($changes{$key} eq 'default') {
-				print "Deleting $key\n";
-				push @delete, $key;
-			} else {
-				print "Setting $key to '$changes{$key}'\n";
-				$replace{$key} = $changes{$key};
-			}
-		}
-
-		$ldap = ldap_connect_auth;
-		my $dn = user_dn(whoami);
-		my $res = $ldap->modify($dn, replace => \%replace,
-			delete => \@delete);
-		if ($res->is_error) { die ldap_errmsg($res, $dn); }
-		return 0;
-	}
-	else {
-		$ldap = ldap_connect_auth;
-		my $dn = user_dn(whoami);
-		my $res = $ldap->search(base => $dn, scope => "base",
-			filter => q(objectClass=posixAccount));
-		$res->is_error and die ldap_errmsg($res, $dn);
-		for my $entry ($res->entries) {
-			for my $attr (sort grep {/^acs/} $entry->attributes) {
-				my $value = $entry->get_value($attr);
-				$attr =~ s/^acs//;
-				print "$attr: $value\n";
-			}
-		}
-	}
-};
-
 $commands{"user:chsh"} = sub {
 	my $shell = shift;
 	if ($shell && $shell eq '-s') { $shell = shift; }
@@ -824,7 +778,6 @@ ACCESS LISTS
 USER ACCOUNTS
 	view	user <user>...
 	shell	user:chsh <shell>
-	privacy	user:acs [<attribute=value>...]
 
 SERVERS
 	view	server <host>
