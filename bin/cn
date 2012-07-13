@@ -679,7 +679,8 @@ $commands{"server:set"} = sub {
 	my %changes = (replace => {});
 
 	for (@_) {
-		my ($attr, $value) = split(/=/, $_, 2);
+		my @m = /^(\w+)(=|\+=|-=)(.*)$/;
+		my ($attr, $op, $value) = @m;
 		given ($attr) {
 			when ("active") {
 				$attr = "isActive";
@@ -697,7 +698,17 @@ $commands{"server:set"} = sub {
 				$value = user_dn($value);
 			}
 		}
-		$changes{replace}{$attr} = [$value];
+		given ($op) {
+			when ("=") {
+				push @{$changes{replace}{$attr}}, $value;
+			}
+			when ("+=") {
+				push @{$changes{add}{$attr}}, $value;
+			}
+			when ("-=") {
+				push @{$changes{delete}{$attr}}, $value;
+			}
+		}
 	}
 
 	$ldap = ldap_connect_auth;
