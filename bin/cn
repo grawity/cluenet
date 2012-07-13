@@ -113,8 +113,8 @@ sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
 
 ### LDAP connection
 
-sub connect_auth { goto &Cluenet::LDAP::ldap_connect_auth; }
-sub connect_anon { goto &Cluenet::LDAP::ldap_connect_anon; }
+sub ldap_connect_auth { goto &Cluenet::LDAP::ldap_connect_auth; }
+sub ldap_connect_anon { goto &Cluenet::LDAP::ldap_connect_anon; }
 
 # Get and cache LDAP authzid
 sub whoami {
@@ -312,7 +312,7 @@ $commands{"access"} = sub {
 	usage("access <host/service>... [+-]<user>...") unless @services;
 
 	if (@add or @del) {
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		for (@services) {
 			my ($host, $service) = @$_;
 			my @users = mgmt_access_get_users($ldap, $host, $service);
@@ -329,7 +329,7 @@ $commands{"access"} = sub {
 			}
 		}
 	} else {
-		$ldap = connect_anon;
+		$ldap = ldap_connect_anon;
 		for (@services) {
 			my ($host, $service) = @$_;
 			my @users = mgmt_access_get_users($ldap, $host, $service);
@@ -341,24 +341,23 @@ $commands{"access"} = sub {
 $commands{"acl"} = sub {
 	usage("acl <host>... [+-]<service>...") unless @_;
 
-
 	my (@hosts, @add, @del);
 	my $err = 0;
 
 	for (@_) {
-		if (m!^\+(.+)$!) {
+		when (m!^\+(.+)$!) {
 			push @add, $1;
 		}
-		elsif (m!^-(.+)$!) {
+		when (m!^-(.+)$!) {
 			push @del, $1;
 		}
-		else {
+		default {
 			push @hosts, $_;
 		}
 	}
 
 	if (@add or @del) {
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
 			for my $service (@add) {
 				my ($res, $dn, %entry);
@@ -447,7 +446,7 @@ $commands{"acl"} = sub {
 $commands{"server"} = sub {
 	usage("server <host>...") unless @_;
 
-	$ldap = connect_anon;
+	$ldap = ldap_connect_anon;
 
 	for (@_) {
 		my $server = get_server_info($_);
@@ -464,7 +463,7 @@ $commands{"server:dump"} = sub {
 };
 
 $commands{"server:list"} = sub {
-	$ldap = connect_anon;
+	$ldap = ldap_connect_anon;
 
 	my $base = "ou=servers,dc=cluenet,dc=org";
 	my $res = $ldap->search(base => $base, scope => "one",
@@ -496,7 +495,7 @@ $commands{"server:admin"} = sub {
 
 	if (@add or @del) {
 		# update admins
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
 			my $dn = server_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
@@ -547,7 +546,7 @@ $commands{"server:admin"} = sub {
 		}
 	} else {
 		# list admins
-		$ldap = connect_anon;
+		$ldap = ldap_connect_anon;
 		for my $host (@hosts) {
 			my $dn = server_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
@@ -594,7 +593,7 @@ $commands{"server:create"} = sub {
 
 	usage("server:create <hostname>") unless $host;
 
-	$ldap = connect_auth;
+	$ldap = ldap_connect_auth;
 	$owner //= whoami;
 	@address || push @address, "0.0.0.0";
 
@@ -651,7 +650,7 @@ $commands{"server:delete"} = sub {
 
 	usage("server:delete <hostname>...") unless @_;
 
-	$ldap = connect_auth;
+	$ldap = ldap_connect_auth;
 
 	for my $host (@_) {
 		my $fqdn = make_server_fqdn($host);
@@ -701,7 +700,7 @@ $commands{"server:set"} = sub {
 		$changes{replace}{$attr} = [$value];
 	}
 
-	$ldap = connect_auth;
+	$ldap = ldap_connect_auth;
 	for my $host (@hosts) {
 		my $dn = server_dn($host);
 		print "Modifying $dn\n";
@@ -711,7 +710,7 @@ $commands{"server:set"} = sub {
 };
 
 $commands{"user"} = sub {
-	$ldap = connect_anon;
+	$ldap = ldap_connect_anon;
 	for my $user (@_) {
 		print_user_info(get_user_info($user));
 	}
@@ -751,7 +750,7 @@ $commands{"user:acs"} = sub {
 			}
 		}
 
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		my $dn = user_dn(whoami);
 		my $res = $ldap->modify($dn, replace => \%replace,
 			delete => \@delete);
@@ -759,7 +758,7 @@ $commands{"user:acs"} = sub {
 		return 0;
 	}
 	else {
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		my $dn = user_dn(whoami);
 		my $res = $ldap->search(base => $dn, scope => "base",
 			filter => q(objectClass=posixAccount));
@@ -789,7 +788,7 @@ $commands{"user:chsh"} = sub {
 			warn "warning: shell might not be available on other servers\n";
 		}
 
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		my $dn = user_dn(whoami);
 		my %entry = (loginShell => $shell);
 
@@ -798,7 +797,7 @@ $commands{"user:chsh"} = sub {
 		$res->is_error and die ldap_errmsg($res, $dn);
 	}
 	else {
-		$ldap = connect_auth;
+		$ldap = ldap_connect_auth;
 		my $dn = user_dn(whoami);
 
 		my $res = $ldap->search(base => $dn, scope => "base",
@@ -840,11 +839,12 @@ MISCELLANEOUS
 };
 
 $commands{"whoami"} = sub {
+
 	my $verbose = 0;
 	Getopt::Long::GetOptionsFromArray(\@_,
 		"v|verbose" => \$verbose);
 
-	$ldap = connect_auth();
+	$ldap = ldap_connect_auth();
 	my $resp = $ldap->who_am_i->response;
 	my $dn;
 	my $uid;
