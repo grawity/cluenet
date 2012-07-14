@@ -228,6 +228,26 @@ sub print_user_info {
 	endsection;
 }
 
+{
+	my $err = 0;
+	sub ldap_exit {
+		exit $err ? 1 : 0;
+	}
+	sub ldap_check {
+		my ($res, $dn, %args) = @_;
+		if ($res->is_error) {
+			++$err;
+			warn ldap_errmsg($res, $dn);
+			if ($args{die}) {
+				ldap_exit;
+			}
+			return 0;
+		} else {
+			return 1;
+		}
+	}
+}
+
 ### Miscellaneous
 
 sub usage {
@@ -524,8 +544,9 @@ $commands{"server"} = sub {
 			my $dn = server_dn($host);
 			print "Modifying $dn\n";
 			my $res = $ldap->modify($dn, %changes);
-			$res->is_error and warn ldap_errmsg($res, $dn);
+			ldap_check($res, $dn);
 		}
+		ldap_exit;
 	}
 	else {
 		$ldap = ldap_connect_anon;
@@ -568,10 +589,7 @@ $commands{"server:admin"} = sub {
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
 				attrs => ["authorizedAdministrator", "owner"]);
-			if ($res->is_error) {
-				warn ldap_errmsg($res, $dn);
-				next;
-			}
+			ldap_check($res, $dn) or next;
 
 			my ($owner, @admins, %changes);
 			for my $entry ($res->entries) {
@@ -606,7 +624,7 @@ $commands{"server:admin"} = sub {
 
 			if (@add_host or @del_host) {
 				my $res = $ldap->modify($dn, %changes);
-				$res->is_error and warn ldap_errmsg($res, $dn);
+				ldap_check($res, $dn);
 			} else {
 				print "$host: Nothing to do\n";
 			}
@@ -619,10 +637,7 @@ $commands{"server:admin"} = sub {
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
 				attrs => ["authorizedAdministrator", "owner"]);
-			if ($res->is_error) {
-				warn ldap_errmsg($res, $dn);
-				next;
-			}
+			ldap_check($res, $dn) or next;
 
 			for my $entry ($res->entries) {
 				my $fmt = "%-15s\t%s\n";
