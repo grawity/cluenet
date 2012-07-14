@@ -511,6 +511,9 @@ $commands{"server"} = sub {
 					$attr = "userAccessible";
 					$value = ldap_bool($value);
 				}
+				when ("admin") {
+					$value = user_dn($value);
+				}
 				when ("owner") {
 					$value = user_dn($value);
 				}
