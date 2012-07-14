@@ -555,7 +555,7 @@ $commands{"server"} = sub {
 			my $server = get_server_info($host);
 			my $owner = get_user_info($server->{owner}, 1);
 			my @admins = map {get_user_info($_, 1)}
-					grep {!m|/|} @{$server->{authorizedAdministrator}};
+					grep {!m|/|} @{$server->{admin}};
 			print_server_info($server, $owner, @admins);
 		}
 	}
@@ -589,14 +589,14 @@ $commands{"server:admin"} = sub {
 			my $dn = server_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
-				attrs => ["authorizedAdministrator", "owner"]);
+				attrs => ["admin", "owner"]);
 			ldap_check($res, $dn) or next;
 
 			my ($owner, @admins, %changes);
 			for my $entry ($res->entries) {
 				$owner = user_from_dn($entry->get_value("owner"));
 				@admins = map {user_from_dn $_}
-					$entry->get_value("authorizedAdministrator");
+					$entry->get_value("admin");
 			}
 
 			if ($owner ~~ @del and !($owner ~~ @admins)) {
@@ -612,13 +612,13 @@ $commands{"server:admin"} = sub {
 
 			if (@add_host) {
 				$changes{add} = {
-					authorizedAdministrator => [map {user_dn $_} @add_host],
+					admin => [map {user_dn $_} @add_host],
 				};
 				print "$host: Adding ".join(", ", @add_host)."\n";
 			}
 			if (@del_host) {
 				$changes{delete} = {
-					authorizedAdministrator => [map {user_dn $_} @del_host],
+					admin => [map {user_dn $_} @del_host],
 				};
 				print "$host: Removing ".join(", ", @del_host)."\n";
 			}
@@ -637,13 +637,13 @@ $commands{"server:admin"} = sub {
 			my $dn = server_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
-				attrs => ["authorizedAdministrator", "owner"]);
+				attrs => ["admin", "owner"]);
 			ldap_check($res, $dn) or next;
 
 			for my $entry ($res->entries) {
 				my $fmt = "%-15s\t%s\n";
 				my $owner = $entry->get_value("owner");
-				my @admins = $entry->get_value("authorizedAdministrator");
+				my @admins = $entry->get_value("admin");
 
 				$owner = user_from_dn $owner;
 				@admins = sort map {user_from_dn $_} @admins;
