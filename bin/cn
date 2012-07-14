@@ -229,23 +229,23 @@ sub print_user_info {
 	endsection;
 }
 
-{
-	my $err = 0;
-	sub ldap_exit {
-		exit $err ? 1 : 0;
-	}
-	sub ldap_check {
-		my ($res, $dn, %args) = @_;
-		if ($res->is_error) {
-			++$err;
-			warn ldap_errmsg($res, $dn);
-			if ($args{die}) {
-				ldap_exit;
-			}
-			return 0;
-		} else {
-			return 1;
+my $err = 0;
+
+sub ldap_exit {
+	exit $err ? 1 : 0;
+}
+
+sub ldap_check {
+	my ($res, $dn, %args) = @_;
+	if ($res->is_error) {
+		++$err;
+		warn ldap_errmsg($res, $dn);
+		if ($args{die}) {
+			ldap_exit;
 		}
+		return 0;
+	} else {
+		return 1;
 	}
 }
 
@@ -644,7 +644,6 @@ $commands{"server:admin"} = sub {
 			ldap_check($res, $dn) or next;
 
 			for my $entry ($res->entries) {
-				my $fmt = "%-15s\t%s\n";
 				my $owner = $entry->get_value("owner");
 				my @admins = $entry->get_value("admin");
 
@@ -659,6 +658,7 @@ $commands{"server:admin"} = sub {
 						@admins;
 				}
 
+				my $fmt = "%-15s\t%s\n";
 				printf $fmt, $host, $owner.' (owner)';
 				printf $fmt, $host, $_ for @admins;
 			}
@@ -667,7 +667,7 @@ $commands{"server:admin"} = sub {
 };
 
 $commands{"server:create"} = sub {
-	my ($res, $err, %entry);
+	my ($res, %entry);
 
 	my $host = shift;
 	my $owner;
@@ -713,7 +713,7 @@ $commands{"server:create"} = sub {
 	);
 	print "+ $subdn\n";
 	$res = $ldap->add($subdn, attr => [%entry]);
-	if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+	ldap_check($res, $subdn);
 
 	# add service groups
 	for (SHELL_SERVICES) {
@@ -725,14 +725,14 @@ $commands{"server:create"} = sub {
 		);
 		print "+ $subdn\n";
 		$res = $ldap->add($subdn, attr => [%entry]);
-		if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+		ldap_check($res, $subdn);
 	}
 
 	return $err;
 };
 
 $commands{"server:delete"} = sub {
-	my ($res, $err);
+	my ($res);
 
 	usage("server:delete <hostname>...") unless @_;
 
@@ -751,7 +751,7 @@ $commands{"server:delete"} = sub {
 		for my $subdn (@children) {
 			print "- $subdn\n";
 			$res = $ldap->delete($subdn);
-			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			ldap_check($res, $subdn);
 		}
 	}
 
