@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+use utf8;
 BEGIN { push @INC, ($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5" }
 use warnings;
 use strict;
@@ -813,7 +814,8 @@ $commands{"user:chsh"} = sub {
 };
 
 $commands{"help"} = sub {
-	print qq{Usage: cluenet <command>
+	# suck it, iso8859
+	print qq¶Usage: cluenet <command>
 
 ACCESS LISTS
 	show	access <host/service>...
@@ -826,13 +828,14 @@ USER ACCOUNTS
 	shell	user:chsh <shell>
 
 SERVERS
-	view	server <host>
+	show	server [<host>...]
+	modify  server <host>... <attr>{=,+=,-=}<value>...
 	admins	server:admin <host>... [[+-]<user>...]
 	add	server:create <host> [--owner <owner>]
 
 MISCELLANEOUS
 	whoami
-};
+¶;
 
 	return 0;
 };
