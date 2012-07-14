@@ -878,7 +878,7 @@ $commands{"whoami"} = sub {
 		}
 		default {
 			say "Cluenet user \"$uid\"" if !$verbose;
-			$princ = "$1\@CLUENET.ORG";
+			$princ = "$uid\@CLUENET.ORG";
 		}
 	}
 	if ($verbose) {
