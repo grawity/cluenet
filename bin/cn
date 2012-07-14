@@ -4,6 +4,8 @@ use warnings;
 use strict;
 use feature qw(say state switch);
 
+use constant ERR_SYNTAX => 2;
+
 use Authen::SASL;
 use Cluenet::LDAP;
 use Data::Dumper;
@@ -444,37 +446,102 @@ $commands{"acl"} = sub {
 };
 
 $commands{"server"} = sub {
-	usage("server <host>...") unless @_;
-
-	$ldap = ldap_connect_anon;
+	my (@hosts, @changes);
 
 	for (@_) {
-		my $server = get_server_info($_);
-		my $owner = get_user_info($server->{owner}, 1);
-		my @admins = map {get_user_info($_, 1)}
-				grep {!m|/|} @{$server->{authorizedAdministrator}};
-		print_server_info($server, $owner, @admins);
+		when (/=/) {
+			push @changes, $_;
+		}
+		default {
+			push @hosts, $_;
+		}
+	}
+
+	if (!@hosts) {
+		$ldap = ldap_connect_anon;
+
+		my $base = "ou=servers,dc=cluenet,dc=org";
+		my $res = $ldap->search(base => $base, scope => "one",
+			filter => q(objectClass=server), attrs => ["cn"]);
+		if ($res->is_error) { die ldap_errmsg($res, $base); }
+
+		my @hosts = sort grep {s/\.cluenet\.org$//i}
+					map {($_->get_value("cn"))[0]}
+					$res->entries;
+
+		say for @hosts;
+	}
+	elsif (@changes) {
+		my %changes;
+		my %attrs;
+		for (@changes) {
+			my @m = /^(\w+)(=|\+=|-=)(.*)$/;
+			my ($attr, $op, $value) = @m;
+			given ($attr) {
+				when ("active") {
+					$attr = "isActive";
+					$value = ldap_bool($value);
+				}
+				when ("official") {
+					$attr = "isOfficial";
+					$value = ldap_bool($value);
+				}
+				when ("public") {
+					$attr = "userAccessible";
+					$value = ldap_bool($value);
+				}
+				when ("owner") {
+					$value = user_dn($value);
+				}
+			}
+			given ($op) {
+				when ("=") {
+					push @{$changes{replace}{$attr}}, $value;
+					$attrs{$attr}{replace}++;
+				}
+				when ("+=") {
+					push @{$changes{add}{$attr}}, $value;
+					$attrs{$attr}{add}++;
+				}
+				when ("-=") {
+					push @{$changes{delete}{$attr}}, $value;
+					$attrs{$attr}{delete}++;
+				}
+			}
+		}
+
+		for my $attr (keys %attrs) {
+			my $n = $attrs{$attr};
+			if (($n->{add} || $n->{delete}) && $n->{replace}) {
+				warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
+				warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
+				exit ERR_SYNTAX;
+			}
+		}
+
+		$ldap = ldap_connect_auth;
+		for my $host (@hosts) {
+			my $dn = server_dn($host);
+			print "Modifying $dn\n";
+			my $res = $ldap->modify($dn, %changes);
+			$res->is_error and warn ldap_errmsg($res, $dn);
+		}
+	}
+	else {
+		$ldap = ldap_connect_anon;
+		for my $host (@hosts) {
+			my $server = get_server_info($host);
+			my $owner = get_user_info($server->{owner}, 1);
+			my @admins = map {get_user_info($_, 1)}
+					grep {!m|/|} @{$server->{authorizedAdministrator}};
+			print_server_info($server, $owner, @admins);
+		}
 	}
 };
 
 $commands{"server:dump"} = sub {
 	ext_dump_ldif(base => server_dn($_), scope => "sub") for @_;
 	return 0;
-};
-
-$commands{"server:list"} = sub {
-	$ldap = ldap_connect_anon;
-
-	my $base = "ou=servers,dc=cluenet,dc=org";
-	my $res = $ldap->search(base => $base, scope => "one",
-		filter => q(objectClass=server), attrs => ["cn"]);
-	if ($res->is_error) { die ldap_errmsg($res, $base); }
-
-	my @hosts = sort grep {s/\.cluenet\.org$//i}
-				map {($_->get_value("cn"))[0]}
-				$res->entries;
-
-	print "$_\n" for @hosts;
 };
 
 $commands{"server:admin"} = sub {
@@ -670,54 +737,6 @@ $commands{"server:delete"} = sub {
 	}
 
 	return $err;
-};
-
-$commands{"server:set"} = sub {
-	my $err;
-	usage("server:set", qw(server attr=value ...)) unless @_;
-	my @hosts = split(/,/, shift);
-	my %changes = (replace => {});
-
-	for (@_) {
-		my @m = /^(\w+)(=|\+=|-=)(.*)$/;
-		my ($attr, $op, $value) = @m;
-		given ($attr) {
-			when ("active") {
-				$attr = "isActive";
-				$value = ldap_bool($value);
-			}
-			when ("official") {
-				$attr = "isOfficial";
-				$value = ldap_bool($value);
-			}
-			when ("public") {
-				$attr = "userAccessible";
-				$value = ldap_bool($value);
-			}
-			when ("owner") {
-				$value = user_dn($value);
-			}
-		}
-		given ($op) {
-			when ("=") {
-				push @{$changes{replace}{$attr}}, $value;
-			}
-			when ("+=") {
-				push @{$changes{add}{$attr}}, $value;
-			}
-			when ("-=") {
-				push @{$changes{delete}{$attr}}, $value;
-			}
-		}
-	}
-
-	$ldap = ldap_connect_auth;
-	for my $host (@hosts) {
-		my $dn = server_dn($host);
-		print "Modifying $dn\n";
-		my $res = $ldap->modify($dn, %changes);
-		$res->is_error and warn ldap_errmsg($res, $dn);
-	}
 };
 
 $commands{"user"} = sub {
