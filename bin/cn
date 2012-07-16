@@ -51,8 +51,16 @@ sub lookup_host {
 sub format_name {
 	my ($user) = @_;
 	my $name = $user->{uid};
-	if (defined $user->{cn} && $user->{cn} ne $user->{uid}) {
-		$name .= " (".$user->{cn}.")";
+	if (defined $user->{cn}) {
+		if ($user->{cn} ne $user->{uid}) {
+			$name .= " (".$user->{cn}.")";
+		}
+	}
+	elsif (defined $user->{gecos}) {
+		my ($gecos) = split(/,/, $user->{gecos});
+		if ($gecos ne $user->{uid}) {
+			$name .= " (".$gecos.")";
+		}
 	}
 	return $name;
 }
