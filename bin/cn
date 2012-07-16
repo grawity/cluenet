@@ -214,14 +214,10 @@ sub get_user_info {
 	for my $entry ($res->entries) {
 		my %user = map {$_ => [$entry->get_value($_)]} $entry->attributes;
 		for (qw(uid uidNumber gidNumber gecos homeDirectory loginShell cn
-				krb5PrincipalName clueIrcNick ircServicesUser)) {
+				krbPrincipalName clueIrcNick ircServicesUser)) {
 			$user{$_} = $user{$_}->[0];
 		}
 		$user{cn} =~ s/^\s+|\s+$//g;
-		if (defined $user{altEmail}) {
-			print Dumper($user{altEmail});
-			push @{$user{mail}}, @{$user{altEmail}};
-		}
 		return \%user;
 	}
 }
@@ -233,6 +229,7 @@ sub print_user_info {
 	row "shell:"		=> $user->{loginShell} // "(unset)";
 	row "IRC account:"	=> $user->{ircServicesUser}		if $user->{ircServicesUser};
 	row "email:"		=> join(", ", @{$user->{mail}})		if $user->{mail};
+	row "URL:"		=> $user->{labeledURI}			if $user->{labeledURI};
 	endsection;
 }
 
