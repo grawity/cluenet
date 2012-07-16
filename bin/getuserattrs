@@ -9,15 +9,19 @@ use English;
 use Getopt::Long qw(:config no_ignore_case);
 
 my $users = getlogin;
+my $short = 0;
 
 GetOptions(
 	'u|users=s'	=> \$users,
+	's|short!'	=> \$short,
 ) or exit 2;
 
 my @users = split(/,/, $users);
 my @attrs = @ARGV;
 
 my $ldap = Cluenet::LDAP::ldap_connect_anon;
+
+my $err = 0;
 
 for my $uid (@users) {
 	my @items;
@@ -32,6 +36,7 @@ for my $uid (@users) {
 			filter => q(objectClass=posixAccount),
 			attrs => \@attrs);
 		if ($res->is_error) {
+			$err++;
 			next;
 		}
 		for my $entry ($res->entries) {
@@ -40,5 +45,11 @@ for my $uid (@users) {
 			}
 		}
 	}
-	say join("\t", $uid, @$_) for @items;
+	if ($short) {
+		say $_->[1] for @items;
+	} else {
+		say join("\t", $uid, @$_) for @items;
+	}
 }
+
+exit $err ? 1 : 0;
