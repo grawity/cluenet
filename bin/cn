@@ -252,6 +252,59 @@ sub ldap_check {
 	}
 }
 
+# parse "attr=value", "attr+=value", ... list of changes into a LDAP modify operation
+
+sub parse_changelist {
+	my ($args, %opts) = @_;
+	my %changes;
+	my %attrs;
+
+	for (@$args) {
+		my @m = /^(\w+)(=|\+=|-=)(.*)$/;
+		my ($attr, $op, $value) = @m;
+		if ($opts{translate}) {
+			($attr, $value) = $opts{translate}->($attr, $value);
+		}
+		given ($op) {
+			# TODO: support "delete attribute" op
+			when ("=") {
+				push @{$changes{replace}{$attr}}, $value;
+				$attrs{$attr}{replace}++;
+			}
+			when ("+=") {
+				push @{$changes{add}{$attr}}, $value;
+				$attrs{$attr}{add}++;
+			}
+			when ("-=") {
+				push @{$changes{delete}{$attr}}, $value;
+				$attrs{$attr}{delete}++;
+			}
+		}
+	}
+	for my $attr (keys %attrs) {
+		my $n = $attrs{$attr};
+		if (($n->{add} || $n->{delete}) && $n->{replace}) {
+			warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
+			warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
+			exit ERR_SYNTAX;
+		}
+	}
+	return \%changes;
+}
+
+# apply a LDAP modify operation to several objects
+
+sub modify_objects {
+	my ($changes, @objects) = @_;
+
+	my $ldap = ldap_connect_auth;
+	for my $dn (@objects) {
+		say "Modifying $dn";
+		my $res = $ldap->modify($dn, %$changes);
+		ldap_check($res, $dn);
+	}
+}
+
 ### Miscellaneous
 
 sub usage {
@@ -496,63 +549,32 @@ $commands{"server"} = sub {
 		say for @hosts;
 	}
 	elsif (@changes) {
-		my %changes;
-		my %attrs;
-		for (@changes) {
-			my @m = /^(\w+)(=|\+=|-=)(.*)$/;
-			my ($attr, $op, $value) = @m;
-			given ($attr) {
-				when ("active") {
-					$attr = "isActive";
-					$value = ldap_bool($value);
+		my $changes = parse_changelist(\@changes,
+			translate => sub {
+				my ($attr, $value) = @_;
+				given ($attr) {
+					when ("active") {
+						$attr = "isActive";
+						$value = ldap_bool($value);
+					}
+					when ("official") {
+						$attr = "isOfficial";
+						$value = ldap_bool($value);
+					}
+					when ("public") {
+						$attr = "userAccessible";
+						$value = ldap_bool($value);
+					}
+					when ("admin") {
+						$value = user_dn($value);
+					}
+					when ("owner") {
+						$value = user_dn($value);
+					}
 				}
-				when ("official") {
-					$attr = "isOfficial";
-					$value = ldap_bool($value);
-				}
-				when ("public") {
-					$attr = "userAccessible";
-					$value = ldap_bool($value);
-				}
-				when ("admin") {
-					$value = user_dn($value);
-				}
-				when ("owner") {
-					$value = user_dn($value);
-				}
-			}
-			given ($op) {
-				when ("=") {
-					push @{$changes{replace}{$attr}}, $value;
-					$attrs{$attr}{replace}++;
-				}
-				when ("+=") {
-					push @{$changes{add}{$attr}}, $value;
-					$attrs{$attr}{add}++;
-				}
-				when ("-=") {
-					push @{$changes{delete}{$attr}}, $value;
-					$attrs{$attr}{delete}++;
-				}
-			}
-		}
-
-		for my $attr (keys %attrs) {
-			my $n = $attrs{$attr};
-			if (($n->{add} || $n->{delete}) && $n->{replace}) {
-				warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
-				warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
-				exit ERR_SYNTAX;
-			}
-		}
-
-		$ldap = ldap_connect_auth;
-		for my $host (@hosts) {
-			my $dn = server_dn($host);
-			print "Modifying $dn\n";
-			my $res = $ldap->modify($dn, %changes);
-			ldap_check($res, $dn);
-		}
+				return ($attr, $value);
+			});
+		modify_objects($changes, map {server_dn($_)} @hosts);
 		ldap_exit;
 	}
 	else {
@@ -762,10 +784,32 @@ $commands{"server:delete"} = sub {
 };
 
 $commands{"user"} = sub {
-	$ldap = ldap_connect_anon;
-	for my $user (@_) {
-		print_user_info(get_user_info($user));
+	my (@users, @changes);
+
+	for (@_) {
+		when (/=/) {
+			push @changes, $_;
+		}
+		default {
+			push @users, $_;
+		}
 	}
+
+	if (!@users) {
+		...
+	}
+	elsif (@changes) {
+		my $changes = parse_changelist(\@changes);
+		modify_objects($changes, map {user_dn($_)} @users);
+		ldap_exit;
+	}
+	else {
+		$ldap = ldap_connect_anon;
+		for my $user (@users) {
+			print_user_info(get_user_info($user));
+		}
+	}
+
 	return 0;
 };
 
