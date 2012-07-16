@@ -540,7 +540,7 @@ $commands{"server"} = sub {
 		my $base = "ou=servers,dc=cluenet,dc=org";
 		my $res = $ldap->search(base => $base, scope => "one",
 			filter => q(objectClass=server), attrs => ["cn"]);
-		if ($res->is_error) { die ldap_errmsg($res, $base); }
+		ldap_check($res, $base);
 
 		my @hosts = sort grep {s/\.cluenet\.org$//i}
 					map {($_->get_value("cn"))[0]}
@@ -796,7 +796,15 @@ $commands{"user"} = sub {
 	}
 
 	if (!@users) {
-		...
+		$ldap = ldap_connect_anon;
+
+		my $base = "ou=people,dc=cluenet,dc=org";
+		my $res = $ldap->search(base => $base, scope => "one",
+			filter => q(objectClass=posixAccount), attrs => ["uid"]);
+		ldap_check($res, $base);
+
+		my @users = sort map {($_->get_value("uid"))[0]} $res->entries;
+		say for @users;
 	}
 	elsif (@changes) {
 		my $changes = parse_changelist(\@changes);
