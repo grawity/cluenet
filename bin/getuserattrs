@@ -23,28 +23,50 @@ my $ldap = Cluenet::LDAP::ldap_connect_anon;
 
 my $err = 0;
 
+my $cachedir = "/var/cache/cluenet/user-info";
+
+sub getattrs {
+	my ($uid, $attrs) = @_;
+}
+
 for my $uid (@users) {
 	my @items;
-	my $cachefile = "/var/cache/cluenet/user-info/$uid";
+	my $cachefile = "$cachedir/$uid";
 	if (-r $cachefile && -M $cachefile < 1) {
-		...;
+		open(my $fh, "<", $cachefile);
+		while (<$fh>) {
+			chomp;
+			my ($u, $k, $v) = split(/\t/, $_, 3);
+			if ($u eq $uid && $k ~~ @attrs) {
+				push @items, [$k, $v];
+			}
+		}
+		close($fh);
 	} else {
 		my $dn = user_dn($uid);
 		my $res = $ldap->search(
 			base => $dn,
 			scope => "base",
-			filter => q(objectClass=posixAccount),
-			attrs => \@attrs);
+			filter => q(objectClass=posixAccount));
 		if ($res->is_error) {
 			$err++;
 			next;
 		}
 		for my $entry ($res->entries) {
+			if (-d $cachedir) {
+				open(my $fh, ">", $cachefile);
+				for my $attr ($entry->attributes) {
+					say $fh join("\t", $uid, $attr, $_)
+						for $entry->get_value($attr);
+				}
+				close($fh);
+			}
 			for my $attr (@attrs) {
 				push @items, [$attr, $_] for $entry->get_value($attr);
 			}
 		}
 	}
+
 	if ($short) {
 		say $_->[1] for @items;
 	} else {
