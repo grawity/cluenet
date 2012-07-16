@@ -205,9 +205,15 @@ sub get_server_info {
 }
 
 sub get_user_name {
-	my ($uid) = @_;
-	my $i = get_user_info($uid);
-	$i ? format_name($i) : "\"".user_from_dn($uid)."\" [foreign]";
+	my ($user) = @_;
+	my $i = get_user_info($user);
+	return format_name($i) if $i;
+	my $uid = user_from_dn($user);
+	if ($uid =~ /@/) {
+		return "\"$uid\" [foreign]";
+	} else {
+		return "\"$uid\" [missing]";
+	}
 }
 
 sub print_server_info {
