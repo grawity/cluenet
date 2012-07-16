@@ -67,6 +67,11 @@ sub format_name {
 
 sub format_address {
 	my ($host, $port) = @_;
+	if (ref $port eq 'ARRAY') {
+		$port = @$port > 1
+			? "{".join(",", @$port)."}"
+			: $port->[0];
+	}
 	if ($host =~ /:/) {
 		$host = Net::IP::ip_compress_address($host, 6);
 		return "[$host]:$port";
