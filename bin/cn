@@ -95,6 +95,10 @@ sub ldap_bool { str_bool(shift) ? "TRUE" : "FALSE" }
 my $_rows = 0;
 sub row {
 	my ($label, $value) = @_;
+	if (ref $value eq 'ARRAY') {
+		row($label, $_) for @$value;
+		return;
+	}
 	my @rowvalue = ();
 	my $rowlength = 0;
 	for my $item (split / /, $value) {
