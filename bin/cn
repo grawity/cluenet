@@ -99,6 +99,9 @@ sub row {
 		row($label, $_) for @$value;
 		return;
 	}
+	if (!defined $value) {
+		$value = '(nil)';
+	}
 	my @rowvalue = ();
 	my $rowlength = 0;
 	for my $item (split / /, $value) {
@@ -168,17 +171,28 @@ sub get_server_info {
 	}
 }
 
+sub get_user_name {
+	my ($uid) = @_;
+	my $i = get_user_info($uid);
+	$i ? format_name($i) : "\"".user_from_dn($uid)."\" [foreign]";
+}
+
 sub print_server_info {
-	my ($server, $owner, @admins) = @_;
-	@admins = sort {$a->{uid} cmp $b->{uid}} @admins;
+	my ($host) = @_;
+
+	my $server = get_server_info($host);
+	my $owner = get_user_info($server->{owner});
+
+	my @admins = sort map {get_user_name($_)}
+			grep {!m|/|} @{$server->{admin}};
+
 	my $port = $server->{sshPort} // 22;
 
 	row "HOSTNAME:"		=> uc $server->{cn};
 	row "address:"		=> format_address($_, $port)
 		for @{$server->{address}};
 	row "owner:"		=> format_name($owner);
-	row "admin:"		=> format_name($_)
-		for @admins;
+	row "admin:"		=> \@admins;
 	row "status:"		=> join(", ", grep {defined} (
 					$server->{isOfficial}     ? "official" : "unofficial",
 					$server->{userAccessible} ? "public"   : "private",
@@ -205,9 +219,8 @@ sub print_server_info {
 }
 
 sub get_user_info {
-	my ($user, $is_dn) = @_;
-	my $dn = $is_dn ? $user : user_dn($user);
-
+	my ($user) = @_;
+	my $dn = user_dn($user);
 	my $res = $ldap->search(base => $dn, scope => "base",
 		filter => q(objectClass=posixAccount));
 	ldap_check($res, $dn) or return undef;
@@ -581,11 +594,7 @@ $commands{"server"} = sub {
 	else {
 		$ldap = ldap_connect_anon;
 		for my $host (@hosts) {
-			my $server = get_server_info($host);
-			my $owner = get_user_info($server->{owner}, 1);
-			my @admins = map {get_user_info($_, 1)}
-					grep {!m|/|} @{$server->{admin}};
-			print_server_info($server, $owner, @admins);
+			print_server_info($host);
 		}
 	}
 };
