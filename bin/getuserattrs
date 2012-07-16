@@ -19,8 +19,6 @@ GetOptions(
 my @users = split(/,/, $users);
 my @attrs = @ARGV;
 
-my $ldap = Cluenet::LDAP::ldap_connect_anon;
-
 my $err = 0;
 
 my $cachedir = "/var/cache/cluenet/user-info";
@@ -44,6 +42,7 @@ for my $uid (@users) {
 		close($fh);
 	} else {
 		my $dn = user_dn($uid);
+		my $ldap = Cluenet::LDAP::ldap_connect_anon;
 		my $res = $ldap->search(
 			base => $dn,
 			scope => "base",
