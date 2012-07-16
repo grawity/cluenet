@@ -32,6 +32,14 @@ use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
 $ENV{LDAPURI} = "ldap://ldap.cluenet.org";
 $ENV{LDAPBASE} = "dc=cluenet,dc=org";
 
+sub status {
+	print STDERR "\r\033[K", shift; $|++;
+}
+
+sub done {
+	print STDERR "\r\033[K"; $|++;
+}
+
 ### String and hostname manipulation
 
 sub lookup_host {
@@ -165,23 +173,35 @@ sub ext_dump_ldif {
 }
 
 sub get_server_info {
-	my ($host, $is_dn) = @_;
-	my $dn = $is_dn ? $host : server_dn($host);
-
-	my $res = $ldap->search(base => $dn, scope => "base",
-		filter => q(objectClass=server));
-	$res->is_error and die ldap_errmsg($res, $dn);
-	for my $entry ($res->entries) {
-		my %server = map {$_ => [$entry->get_value($_)]} $entry->attributes;
-		for (qw(cn owner internalAddress sshPort)) {
-			$server{$_} = $server{$_}->[0];
+	state %cache;
+	my ($host) = @_;
+	my $dn = server_dn($host);
+	if (!exists $cache{$dn}) {
+		status "Looking up server: ".server_from_dn($dn);
+		my $res = $ldap->search(
+				base => $dn,
+				scope => "base",
+				filter => q(objectClass=server));
+		ldap_check($res, $dn)
+			or return $cache{$dn} = undef;
+		for my $entry ($res->entries) {
+			my %server = map {$_ => [$entry->get_value($_)]}
+					$entry->attributes;
+			for (qw(cn owner)) {
+				$server{$_} = $server{$_}->[0];
+			}
+			for (qw(isActive isOfficial userAccessible)) {
+				$server{$_} = $server{$_}
+						? $server{$_}->[0] eq "TRUE"
+						: 0;
+			}
+			$server{address} = [lookup_host($server{cn})];
+			$cache{$dn} = \%server;
+			last;
 		}
-		for (qw(isActive isOfficial userAccessible)) {
-			$server{$_} = $server{$_}->[0] eq "TRUE";
-		}
-		$server{address} = [lookup_host($server{cn})];
-		return \%server;
+		done;
 	}
+	return $cache{$dn};
 }
 
 sub get_user_name {
@@ -232,20 +252,27 @@ sub print_server_info {
 }
 
 sub get_user_info {
+	state %cache;
 	my ($user) = @_;
 	my $dn = user_dn($user);
-	my $res = $ldap->search(base => $dn, scope => "base",
-		filter => q(objectClass=posixAccount));
-	ldap_check($res, $dn) or return undef;
-	for my $entry ($res->entries) {
-		my %user = map {$_ => [$entry->get_value($_)]} $entry->attributes;
-		for (qw(uid uidNumber gidNumber gecos homeDirectory loginShell cn
-				krbPrincipalName clueIrcNick ircServicesUser)) {
-			$user{$_} = $user{$_}->[0];
+	if (!exists $cache{$dn}) {
+		status "Looking up user: ".user_from_dn($dn);
+		my $res = $ldap->search(base => $dn, scope => "base",
+			filter => q(objectClass=posixAccount));
+		ldap_check($res, $dn)
+			or return $cache{$dn} = undef;
+		for my $entry ($res->entries) {
+			my %user = map {$_ => [$entry->get_value($_)]} $entry->attributes;
+			for (qw(uid uidNumber gidNumber gecos homeDirectory loginShell cn)) {
+				$user{$_} = $user{$_}->[0];
+			}
+			$user{cn} =~ s/^\s+|\s+$//g;
+			$cache{$dn} = \%user;
+			last;
 		}
-		$user{cn} =~ s/^\s+|\s+$//g;
-		return \%user;
+		done;
 	}
+	return $cache{$dn};
 }
 
 sub print_user_info {
@@ -269,7 +296,8 @@ sub ldap_check {
 	my ($res, $dn, %args) = @_;
 	if ($res->is_error) {
 		++$err;
-		warn ldap_errmsg($res, $dn);
+		done;
+		print STDERR "\e[33m".ldap_errmsg($res, $dn)."\e[m";
 		if ($args{die}) {
 			ldap_exit;
 		}
