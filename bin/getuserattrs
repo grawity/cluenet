@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+BEGIN {
+	push @INC, "/cluenet/lib/perl5",
+		($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5";
+}
+use feature qw(say);
+use Cluenet::LDAP;
+use English;
+use Getopt::Long qw(:config no_ignore_case);
+
+my $users;
+
+GetOptions(
+	'u|users=s'	=> \$users,
+) or exit 2;
+
+if ($UID ~~ 25000..25999) {
+	$users //= getlogin;
+} else {
+	$users // exit 1;
+}
+
+my @users = split(/,/, $users);
+my @attrs = @ARGV;
+
+my $ldap = Cluenet::LDAP::ldap_connect_anon;
+
+for my $uid (@users) {
+	my @items;
+	my $cachefile = "/var/cache/cluenet/user-info/$uid";
+	if (-r $cachefile && -M $cachefile < 1) {
+		...;
+	} else {
+		my $dn = user_dn($uid);
+		my $res = $ldap->search(
+			base => $dn,
+			scope => "base",
+			filter => q(objectClass=posixAccount),
+			attrs => \@attrs);
+		if ($res->is_error) {
+			warn ldap_errmsg($res);
+		}
+		for my $entry ($res->entries) {
+			for my $attr (@attrs) {
+				push @items, [$attr, $_] for $entry->get_value($attr);
+			}
+		}
+	}
+	say join("\t", $uid, @$_) for @items;
+}
