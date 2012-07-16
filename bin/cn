@@ -8,6 +8,9 @@ use feature qw(say state switch);
 use constant ERR_SYNTAX => 2;
 
 use Authen::SASL;
+use Cluenet::Common qw(
+	make_server_fqdn
+);
 use Cluenet::LDAP;
 use Data::Dumper;
 use Getopt::Long qw(:config posix_default no_ignore_case);
