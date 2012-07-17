@@ -430,7 +430,7 @@ sub mgmt_access_modify {
 }
 
 $commands{"access"} = sub {
-	my (@services, @add, @del);
+	my (@services, @users, @add, @del);
 
 	for (@_) {
 		if (m!/!) {
@@ -445,13 +445,15 @@ $commands{"access"} = sub {
 		} elsif (m!^-(.+)$!) {
 			push @del, $1;
 		} else {
-			warn "Invalid argument: $_\n";
+			push @users, $_;
 		}
 	}
 
-	usage("access <host/service>... [+-]<user>...") unless @services;
-
-	if (@add or @del) {
+	if ((@add or @del) and @users) {
+		warn "Error: Cannot mix 'modify' ([+-]<user>) and 'search' (<user>) args\n";
+		exit ERR_SYNTAX;
+	}
+	elsif (@add or @del) {
 		$ldap = ldap_connect_auth;
 		for (@services) {
 			my ($host, $service) = @$_;
@@ -468,13 +470,72 @@ $commands{"access"} = sub {
 				say "$host/$service: nothing to do";
 			}
 		}
-	} else {
+	}
+	elsif (@users) {
+		$ldap = ldap_connect_anon;
+		my @filters = map {"(member=$_)"} map {user_dn($_)} @users;
+		my $filter = "(&(objectClass=groupOfNames)(|".join("", @filters)."))";
+		my @results;
+		if (@services) {
+			for (@services) {
+				my ($host, $service) = @$_;
+				my $base;
+				if ($service eq 'all') {
+					$base = dn_for_server($host);
+				} else {
+					$base = dn_for_service_acl($host, $service);
+				}
+				status "Searching in ACL: $host/$service";
+				my $res = $ldap->search(
+						base => $base,
+						scope => "sub",
+						filter => $filter,
+						attrs => ["cn", "member"]);
+				ldap_check($res, $base) or next;
+				push @results, $res->entries;
+				done;
+			}
+		} else {
+			my $base = "ou=servers,dc=cluenet,dc=org";
+			status "Searching in all server ACLs...";
+			my $res = $ldap->search(
+					base => $base,
+					scope => "sub",
+					filter => $filter,
+					attrs => ["cn", "member"]);
+			ldap_check($res, $base) or next;
+			push @results, $res->entries;
+			done;
+		}
+		# Certainly not pretty, but this will do.
+		my @output;
+		for my $entry (@results) {
+			my $host = server_from_dn($entry->dn);
+			my $service = ($entry->get_value("cn"))[0];
+			push @output,
+				map {{host => $host, service => $service, user => $_}}
+				grep {$_ ~~ @users}
+				map {user_from_dn($_)}
+				$entry->get_value("member");
+		}
+		printf("%-30s\t%s\n",
+			$_->{host}."/".$_->{service}, $_->{user}) for
+			sort {$a->{user} cmp $b->{user}}
+			sort {$a->{host} cmp $b->{host}}
+			sort {$a->{service} cmp $b->{service}}
+			@output;
+
+	}
+	elsif (@services) {
 		$ldap = ldap_connect_anon;
 		for (@services) {
 			my ($host, $service) = @$_;
 			my @users = mgmt_access_get_users($ldap, $host, $service);
 			print "$host/$service\t$_\n" for sort @users;
 		}
+	}
+	else {
+		usage("access <host/service>... [+-]<user>...") unless @services;
 	}
 };
 
