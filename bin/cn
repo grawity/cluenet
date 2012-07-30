@@ -957,7 +957,7 @@ $commands{"user"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_anon;
+		$ldap = ldap_connect_auth;
 		for my $user (@users) {
 			print_user_info(get_user_info($user));
 		}
