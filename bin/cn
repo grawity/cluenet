@@ -157,8 +157,19 @@ sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
 
 ### LDAP connection
 
-sub ldap_connect_auth { goto &Cluenet::LDAP::ldap_connect_auth; }
-sub ldap_connect_anon { goto &Cluenet::LDAP::ldap_connect_anon; }
+sub ldap_connect_auth {
+	status "Connecting to LDAP server";
+	my $r = Cluenet::LDAP::ldap_connect_auth;
+	done;
+	return $r;
+}
+
+sub ldap_connect_anon {
+	status "Connecting to LDAP server";
+	my $r = Cluenet::LDAP::ldap_connect_anon;
+	done;
+	return $r;
+}
 
 # Get and cache LDAP authzid
 sub whoami {
