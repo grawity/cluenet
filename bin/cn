@@ -19,6 +19,8 @@ use Net::IP;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
+use POSIX qw(strftime);
+use POSIX::strptime;
 use Socket;
 use Text::Format;
 
@@ -54,6 +56,14 @@ sub lookup_host {
 	if ($query) { push @addrs, $_->address for $query->answer }
 
 	return @addrs;
+}
+
+sub format_date {
+	my ($sz) = @_;
+	($sz) = @$sz;
+	my (@tm) = POSIX::strptime($sz, "%Y%m%d%H%M%SZ");
+	return POSIX::strftime("%Y-%m-%d", @tm);
+	# TODO: relative date
 }
 
 sub format_name {
@@ -181,7 +191,8 @@ sub get_server_info {
 		my $res = $ldap->search(
 				base => $dn,
 				scope => "base",
-				filter => q(objectClass=server));
+				filter => q(objectClass=server),
+				attrs => ["*", "+"]);
 		ldap_check($res, $dn)
 			or return $cache{$dn} = undef;
 		for my $entry ($res->entries) {
@@ -228,6 +239,7 @@ sub print_server_info {
 	my $port = $server->{sshPort} // 22;
 
 	row "HOSTNAME:"		=> uc $server->{cn};
+	row "created:"		=> format_date($server->{createTimestamp});
 	row "address:"		=> format_address($_, $port)
 		for @{$server->{address}};
 	row "owner:"		=> format_name($owner);
@@ -263,8 +275,11 @@ sub get_user_info {
 	my $dn = user_dn($user);
 	if (!exists $cache{$dn}) {
 		status "Looking up user: ".user_from_dn($dn);
-		my $res = $ldap->search(base => $dn, scope => "base",
-			filter => q(objectClass=posixAccount));
+		my $res = $ldap->search(
+			base => $dn,
+			scope => "base",
+			filter => q(objectClass=posixAccount),
+			attrs => ["*", "+"]);
 		ldap_check($res, $dn)
 			or return $cache{$dn} = undef;
 		for my $entry ($res->entries) {
@@ -284,6 +299,7 @@ sub get_user_info {
 sub print_user_info {
 	my ($user) = @_;
 	row "PERSON:"		=> format_name($user);
+	row "created:"		=> format_date($user->{createTimestamp});
 	row "uid:"		=> $user->{uidNumber};
 	row "shell:"		=> $user->{loginShell} // "(unset)";
 	row "IRC account:"	=> $user->{ircServicesUser}		if $user->{ircServicesUser};
