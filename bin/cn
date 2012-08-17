@@ -1,6 +1,11 @@
 #!/usr/bin/env perl
+BEGIN {
+	push @INC, "$ENV{CLUENET}/lib/perl5" if defined $ENV{CLUENET};
+	push @INC, "$ENV{HOME}/cluenet/lib/perl5" if -d "$ENV{HOME}/cluenet";
+	push @INC, "/cluenet/lib/perl5" if -d "/cluenet";
+}
+
 use utf8;
-BEGIN { push @INC, ($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5" }
 use warnings;
 use strict;
 use feature qw(say state switch);
