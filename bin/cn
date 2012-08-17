@@ -5,6 +5,7 @@ BEGIN {
 	push @INC, "/cluenet/lib/perl5" if -d "/cluenet";
 }
 
+use v5.14.0;
 use utf8;
 use warnings;
 use strict;
@@ -1028,6 +1029,7 @@ ACCESS LISTS
 
 USER ACCOUNTS
 	view	user <user>...
+	modify	user <user>... <attr>{=,+=,-=}<value>...
 	shell	user:chsh <shell>
 
 SERVERS
