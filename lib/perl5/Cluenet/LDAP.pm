@@ -5,6 +5,7 @@ use base "Exporter";
 use Authen::SASL;
 use Carp;
 use Cluenet::Common;
+use Cluenet::Kerberos;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
@@ -63,6 +64,8 @@ sub server_from_dn {
 # Establish LDAP connection, authenticated or anonymous
 sub _connect_auth {
 	my %opts = @_;
+
+	krb5_ensure_tgt();
 
 	my $ldap = Net::LDAP->new(LDAP_MASTER)
 		or croak "$!";
