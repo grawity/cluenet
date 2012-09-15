@@ -41,7 +41,8 @@ $ENV{LDAPURI} = "ldap://ldap.cluenet.org";
 $ENV{LDAPBASE} = "dc=cluenet,dc=org";
 
 sub status {
-	print STDERR "\r\033[K", shift; $|++;
+	print STDERR "\r\033[K",
+		"\033[38;5;10m", shift, "\033[m"; $|++;
 }
 
 sub done {
