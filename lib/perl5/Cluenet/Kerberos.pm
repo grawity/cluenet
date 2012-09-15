@@ -16,7 +16,6 @@ our @EXPORT = qw(
 	krb5_kuserok
 	krb5_canonuser
 	krb5_checkpass
-	krb5_ensure_tgt
 	kinit_as_user
 	kinit_as_service
 	);
@@ -79,12 +78,6 @@ sub krb5_checkpass {
 
 sub krb5_have_tgt {
 	system("klist", "-s", "-5") == 0;
-}
-
-sub krb5_ensure_tgt {
-	if (!krb5_have_tgt()) {
-		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
-	}
 }
 
 sub new_ccache {

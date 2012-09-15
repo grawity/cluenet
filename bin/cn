@@ -163,7 +163,19 @@ sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
 
 ### LDAP connection
 
+sub krb5_have_tgt {
+	system("klist", "-s", "-5") == 0;
+}
+
+sub krb5_ensure_tgt {
+	if (!krb5_have_tgt()) {
+		done;
+		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
+	}
+}
+
 sub ldap_connect_auth {
+	krb5_ensure_tgt();
 	status "Connecting to LDAP server...";
 	my $r = Cluenet::LDAP::ldap_connect_auth;
 	done;
