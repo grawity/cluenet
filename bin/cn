@@ -442,10 +442,7 @@ sub mgmt_access_get_users {
 		scope => "base",
 		filter => q(objectClass=*),
 		attrs => ["member"]);
-	if ($res->is_error) {
-		warn ldap_errmsg($res, $dn);
-		return;
-	}
+	ldap_check($res, $dn) or return;
 	my @users;
 	for my $entry ($res->entries) {
 		@users = map {user_from_dn $_} $entry->get_value("member");
@@ -618,7 +615,7 @@ $commands{"acl"} = sub {
 					cn => "svcAccess",
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 			}
 
 
@@ -634,14 +631,14 @@ $commands{"acl"} = sub {
 					member => [user_dn(whoami)],
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 
 				$dn = server_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, add => \%entry);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 			}
 			for my $service (@del) {
 				my ($dn, $res, %entry);
@@ -650,14 +647,14 @@ $commands{"acl"} = sub {
 
 				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
 				$res = $ldap->delete($dn);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 
 				$dn = server_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, delete => \%entry);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 			}
 		}
 	}
