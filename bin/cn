@@ -606,6 +606,22 @@ $commands{"acl"} = sub {
 	if (@add or @del) {
 		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
+			my ($res, $dn, %entry);
+
+			$dn = "cn=svcAccess,".server_dn($host);
+			$res = $ldap->search(base => $dn, scope => "base",
+				filter => q(objectClass=*), attrs => []);
+			if (!$res->count) {
+				print "Creating ACL subtree: $host\n";
+				%entry = (
+					objectClass => ["groupOfGroups"],
+					cn => "svcAccess",
+				);
+				$res = $ldap->add($dn, attr => [%entry]);
+				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			}
+
+
 			for my $service (@add) {
 				my ($res, $dn, %entry);
 
