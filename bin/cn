@@ -197,6 +197,7 @@ sub whoami {
 		$me = $ldap->who_am_i->response;
 		$me =~ s/^u://;
 		$me =~ s/^dn:uid=(.+?),.*$/$1/;
+		$me =~ s|/admin$||;
 	}
 	return $me;
 }
@@ -1085,26 +1086,29 @@ $commands{"whoami"} = sub {
 
 	$ldap = ldap_connect_auth;
 	my $resp = $ldap->who_am_i->response;
-	my $dn;
-	my $uid;
-	my $princ;
+	my ($dn, $uid, $kuid, $princ);
+
 	given ($resp) {
 		when (/^dn:(uid=(.+),ou=people,dc=cluenet,dc=org)$/) {
 			$dn = $1;
-			$uid = $2;
+			$kuid = $2;
 		}
 		when (/^dn:(uid=(.+),ou=people,dc=nullroute,dc=eu,dc=org)$/) {
 			$dn = $1;
-			$uid = $2.'@nullroute.eu.org';
+			$kuid = $2.'@nullroute.eu.org';
 		}
 		when (/^u:(.+)$/) {
 			$dn = user_dn($1);
-			$uid = $1;
+			$kuid = $1;
 		}
 		default {
 			say "unknown response $resp";
 		}
 	}
+
+	$uid = $kuid;
+	$uid =~ s|(/.+)*$||;
+
 	given ($uid) {
 		when (/^(.+)@(.+?)$/) {
 			my $query = Net::DNS::Resolver->new->query("_kerberos.$2", "TXT");
@@ -1120,16 +1124,19 @@ $commands{"whoami"} = sub {
 		}
 		default {
 			say "Cluenet user \"$uid\"" if !$verbose;
-			$princ = "$uid\@CLUENET.ORG";
+			$princ = "$kuid\@CLUENET.ORG";
 		}
 	}
+
 	if ($verbose) {
+		say "User:         $uid";
 		say "LDAP authzid: $resp";
 		say "LDAP DN:      $dn";
 		say "Kerberos:     $princ";
 	} else {
 		say "dn: $dn";
 	}
+
 	return 0;
 };
 
