@@ -476,18 +476,24 @@ $commands{"access"} = sub {
 	my (@services, @users, @add, @del);
 
 	for (@_) {
-		if (m!/!) {
+		when (m!^\+(.+)$!) {
+			push @add, $1;
+		}
+		when (m!^-(.+)$!) {
+			push @del, $1;
+		}
+		when (m!^=(.+)$!) {
+			push @users, $1;
+		}
+		when (m!/!) {
 			my ($h, $s) = parse_hostservice_safe($_);
 			if ($s eq 'shell') {
 				push @services, [$h, $_] for SHELL_SERVICES;
 			} else {
 				push @services, [$h, $s];
 			}
-		} elsif (m!^\+(.+)$!) {
-			push @add, $1;
-		} elsif (m!^-(.+)$!) {
-			push @del, $1;
-		} else {
+		}
+		default {
 			push @users, $_;
 		}
 	}
