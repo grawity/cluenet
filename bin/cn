@@ -212,6 +212,7 @@ sub whoami {
 		$me = $ldap->who_am_i->response;
 		$me =~ s/^u://;
 		$me =~ s/^dn:uid=(.+?),.*$/$1/;
+		$me =~ s|/admin$||;
 	}
 	return $me;
 }
@@ -457,10 +458,7 @@ sub mgmt_access_get_users {
 		scope => "base",
 		filter => q(objectClass=*),
 		attrs => ["member"]);
-	if ($res->is_error) {
-		warn ldap_errmsg($res, $dn);
-		return undef;
-	}
+	ldap_check($res, $dn) or return;
 	my @users;
 	for my $entry ($res->entries) {
 		@users = map {user_from_dn $_} $entry->get_value("member");
@@ -494,18 +492,24 @@ $commands{"access"} = sub {
 	my (@services, @users, @add, @del);
 
 	for (@_) {
-		if (m!/!) {
+		when (m!^\+(.+)$!) {
+			push @add, $1;
+		}
+		when (m!^-(.+)$!) {
+			push @del, $1;
+		}
+		when (m!^=(.+)$!) {
+			push @users, $1;
+		}
+		when (m!/!) {
 			my ($h, $s) = parse_hostservice_safe($_);
 			if ($s eq 'shell') {
 				push @services, [$h, $_] for SHELL_SERVICES;
 			} else {
 				push @services, [$h, $s];
 			}
-		} elsif (m!^\+(.+)$!) {
-			push @add, $1;
-		} elsif (m!^-(.+)$!) {
-			push @del, $1;
-		} else {
+		}
+		default {
 			push @users, $_;
 		}
 	}
@@ -621,6 +625,22 @@ $commands{"acl"} = sub {
 	if (@add or @del) {
 		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
+			my ($res, $dn, %entry);
+
+			$dn = "cn=svcAccess,".server_dn($host);
+			$res = $ldap->search(base => $dn, scope => "base",
+				filter => q(objectClass=*), attrs => []);
+			if (!$res->count) {
+				print "Creating ACL subtree: $host\n";
+				%entry = (
+					objectClass => ["groupOfGroups"],
+					cn => "svcAccess",
+				);
+				$res = $ldap->add($dn, attr => [%entry]);
+				ldap_check($res, $dn);
+			}
+
+
 			for my $service (@add) {
 				my ($res, $dn, %entry);
 
@@ -633,14 +653,14 @@ $commands{"acl"} = sub {
 					member => [user_dn(whoami)],
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 
 				$dn = server_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, add => \%entry);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 			}
 			for my $service (@del) {
 				my ($dn, $res, %entry);
@@ -649,14 +669,14 @@ $commands{"acl"} = sub {
 
 				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
 				$res = $ldap->delete($dn);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 
 				$dn = server_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, delete => \%entry);
-				if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+				ldap_check($res, $dn);
 			}
 		}
 	}
@@ -1081,26 +1101,29 @@ $commands{"whoami"} = sub {
 
 	$ldap = ldap_connect_auth;
 	my $resp = $ldap->who_am_i->response;
-	my $dn;
-	my $uid;
-	my $princ;
+	my ($dn, $uid, $kuid, $princ);
+
 	given ($resp) {
 		when (/^dn:(uid=(.+),ou=people,dc=cluenet,dc=org)$/) {
 			$dn = $1;
-			$uid = $2;
+			$kuid = $2;
 		}
 		when (/^dn:(uid=(.+),ou=people,dc=nullroute,dc=eu,dc=org)$/) {
 			$dn = $1;
-			$uid = $2.'@nullroute.eu.org';
+			$kuid = $2.'@nullroute.eu.org';
 		}
 		when (/^u:(.+)$/) {
 			$dn = user_dn($1);
-			$uid = $1;
+			$kuid = $1;
 		}
 		default {
 			say "unknown response $resp";
 		}
 	}
+
+	$uid = $kuid;
+	$uid =~ s|(/.+)*$||;
+
 	given ($uid) {
 		when (/^(.+)@(.+?)$/) {
 			my $query = Net::DNS::Resolver->new->query("_kerberos.$2", "TXT");
@@ -1116,16 +1139,19 @@ $commands{"whoami"} = sub {
 		}
 		default {
 			say "Cluenet user \"$uid\"" if !$verbose;
-			$princ = "$uid\@CLUENET.ORG";
+			$princ = "$kuid\@CLUENET.ORG";
 		}
 	}
+
 	if ($verbose) {
+		say "User:         $uid";
 		say "LDAP authzid: $resp";
 		say "LDAP DN:      $dn";
 		say "Kerberos:     $princ";
 	} else {
 		say "dn: $dn";
 	}
+
 	return 0;
 };
 

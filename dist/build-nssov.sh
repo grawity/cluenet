@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
 set -e
+
 version=${1:-'2.4.30'}
+
+buildroot="$PWD/openldap-nssov-build"
 
 download() {
 	cd "$buildroot"
@@ -25,16 +28,19 @@ package() {
 	echo "Installed to $destdir"
 }
 
-buildroot="$PWD/openldap-nssov-build"
-
-if (( UID )); then
+getbuild() {
 	mkdir -p "$buildroot"
 	download
 	build
 	destdir="$buildroot/nssov"
 	package
+}
+
+if (( UID )); then
+	getbuild
 	echo "Run $0 as root to install system-wide."
 else
+	test -d "$buildroot/nssov" || getbuild
 	#destdir="/cluenet/lib/$(uname -m)/nssov"
 	destdir="/cluenet/lib/nssov"
 	package
