@@ -33,6 +33,7 @@ use Text::Format;
 my $ldap;
 my $cmd;
 my $exit;
+my $status = (-t 2) && !exists($ENV{CN_NO_STATUS});
 my %commands;
 
 use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
@@ -41,12 +42,18 @@ $ENV{LDAPURI} = "ldap://ldap.cluenet.org";
 $ENV{LDAPBASE} = "dc=cluenet,dc=org";
 
 sub status {
-	print STDERR "\r\033[K",
-		"\033[38;5;10m", shift, "\033[m"; $|++;
+	if ($status) {
+		print STDERR "\r\033[K",
+			"\033[38;5;10m", shift, "\033[m";
+		$|++;
+	}
 }
 
 sub done {
-	print STDERR "\r\033[K"; $|++;
+	if ($status) {
+		print STDERR "\r\033[K";
+		$|++;
+	}
 }
 
 ### String and hostname manipulation
@@ -171,7 +178,11 @@ sub krb5_have_tgt {
 sub krb5_ensure_tgt {
 	if (!krb5_have_tgt()) {
 		done;
-		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
+		if (defined $ENV{CN_NUSH}) {
+			die "\e[1;31merror:\e[m not logged in\n";
+		} else {
+			die "Kerberos ticket needed, please run 'kinit'.\n";
+		}
 	}
 }
 
