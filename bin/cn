@@ -201,6 +201,10 @@ sub ldap_connect_anon {
 	return $r;
 }
 
+sub ldap_connect {
+	krb5_have_tgt() ? ldap_connect_auth : ldap_connect_anon;
+}
+
 # Get and cache LDAP authzid
 sub whoami {
 	state $me;
@@ -757,7 +761,7 @@ $commands{"server"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_anon;
+		$ldap = ldap_connect;
 		for my $host (@hosts) {
 			print_server_info($host);
 		}
@@ -835,7 +839,7 @@ $commands{"server:admin"} = sub {
 		}
 	} else {
 		# list admins
-		$ldap = ldap_connect_anon;
+		$ldap = ldap_connect;
 		for my $host (@hosts) {
 			my $dn = server_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
@@ -987,7 +991,7 @@ $commands{"user"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_auth;
+		$ldap = ldap_connect;
 		for my $user (@users) {
 			print_user_info(get_user_info($user));
 		}
