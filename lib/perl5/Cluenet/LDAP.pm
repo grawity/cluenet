@@ -8,6 +8,7 @@ use Cluenet::Common;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
+use Socket qw(AF_INET AF_INET6);
 
 our @EXPORT = qw(
 	user_dn
@@ -72,8 +73,13 @@ sub _connect_auth {
 				cafile => "/etc/ssl/certs/Cluenet.pem")
 			or croak "$!";
 	}
+
+	my $addr = $ldap->{net_ldap_socket}->peeraddr;
+	my $af = (length($addr) == 16) ? AF_INET6 : AF_INET;
+	my $fqdn = gethostbyaddr($addr, $af);
+
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
-	my $saslclient = $sasl->client_new("ldap", dns_canonical(LDAP_MASTER));
+	my $saslclient = $sasl->client_new("ldap", $fqdn);
 	my $msg = $ldap->bind(sasl => $saslclient);
 	$msg->code and die "error: ".$msg->error;
 	return $ldap;
