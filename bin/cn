@@ -422,7 +422,7 @@ sub parse_changelist {
 		my $n = $attrs{$attr};
 		if (($n->{add} || $n->{replace}) && $n->{delattr}) {
 			warn "Error: When deleting an attribute with '-attr', assignment operators '=' and\n";
-			warn "  '-=' will be ignored – the attribute will be deleted anyway.\n";
+			warn "  '-=' will be ignored -- the attribute will be deleted anyway.\n";
 			exit ERR_SYNTAX;
 		}
 		if (($n->{add} || $n->{delete}) && $n->{replace}) {
@@ -1191,9 +1191,6 @@ $commands{"whoami"} = sub {
 };
 
 ### Main code
-
-binmode STDOUT, ":utf8";
-binmode STDERR, ":utf8";
 
 $cmd = shift(@ARGV) // "help";
 
