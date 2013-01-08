@@ -363,13 +363,15 @@ sub ldap_exit {
 sub ldap_check {
 	my ($res, $dn, %args) = @_;
 	if ($res->is_error) {
-		++$err;
-		done;
-		print STDERR "\e[33m".ldap_errmsg($res, $dn)."\e[m";
-		if ($args{die}) {
-			ldap_exit;
+		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
+			return 1;
+		} else {
+			done;
+			print STDERR "\e[33m".ldap_errmsg($res, $dn)."\e[m";
+			++$err;
+			ldap_exit if $args{die};
+			return 0;
 		}
-		return 0;
 	} else {
 		return 1;
 	}
@@ -640,7 +642,6 @@ $commands{"acl"} = sub {
 				ldap_check($res, $dn);
 			}
 
-
 			for my $service (@add) {
 				my ($res, $dn, %entry);
 
@@ -666,17 +667,16 @@ $commands{"acl"} = sub {
 				my ($dn, $res, %entry);
 
 				print "Deleting ACL: $host/$service\n";
-
 				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
 				$res = $ldap->delete($dn);
-				ldap_check($res, $dn);
+				ldap_check($res, $dn, ignore => "LDAP_NO_SUCH_OBJECT");
 
 				$dn = server_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, delete => \%entry);
-				ldap_check($res, $dn);
+				ldap_check($res, $dn, ignore => "LDAP_NO_SUCH_ATTRIBUTE");
 			}
 		}
 	}
