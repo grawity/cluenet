@@ -614,10 +614,10 @@ $commands{"acl"} = sub {
 
 	for (@_) {
 		when (m!^\+(.+)$!) {
-			push @add, $1;
+			push @add, $1 eq 'shell' ? SHELL_SERVICES : $1;
 		}
 		when (m!^-(.+)$!) {
-			push @del, $1;
+			push @del, $1 eq 'shell' ? SHELL_SERVICES : $1;
 		}
 		default {
 			push @hosts, $_;
