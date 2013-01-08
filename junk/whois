@@ -112,12 +112,6 @@ function display_person($entry, $full=true) {
 		put("e-mail", $entry["mail"][0]);
 	if (isset($entry["altEmail"]))
 		each_put("e-mail", $entry["altEmail"]);
-	
-	$contact = array(
-		'aimSn' => 'aim',
-		'msnSn' => 'msn',
-		'xmppUri' => 'xmpp',
-	);
 
 	if ($full) {
 		foreach ($contact as $attr => $name)
