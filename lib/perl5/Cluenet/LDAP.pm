@@ -67,12 +67,6 @@ sub _connect_auth {
 
 	my $ldap = Net::LDAP->new(LDAP_MASTER)
 		or croak "$!";
-	if ($opts{tls}) {
-		# TODO: is cafile required to be here?
-		$ldap->start_tls(verify => "require",
-				cafile => "/etc/ssl/certs/Cluenet.pem")
-			or croak "$!";
-	}
 
 	my $addr = $ldap->{net_ldap_socket}->peeraddr;
 	my $af = (length($addr) == 16) ? AF_INET6 : AF_INET;
