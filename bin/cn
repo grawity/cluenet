@@ -1012,7 +1012,7 @@ $commands{"user"} = sub {
 	my (@users, @changes);
 
 	for (@_) {
-		when (/=/) {
+		when (/=/ or /^-/) {
 			push @changes, $_;
 		}
 		default {
