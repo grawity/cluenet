@@ -20,7 +20,6 @@ our @EXPORT = qw(
 
 use constant {
 	LDAP_HOST	=> "ldap.cluenet.org",
-	LDAP_MASTER	=> "ldap.cluenet.org",
 };
 
 my $whoami;
@@ -65,7 +64,7 @@ sub server_from_dn {
 sub _connect_auth {
 	my %opts = @_;
 
-	my $ldap = Net::LDAP->new(LDAP_MASTER)
+	my $ldap = Net::LDAP->new(LDAP_HOST)
 		or croak "$!";
 
 	my $addr = $ldap->{net_ldap_socket}->peeraddr;
