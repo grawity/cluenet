@@ -4,7 +4,7 @@ use base "Exporter";
 use common::sense;
 use Carp;
 use IO::Handle;
-#use Socket::GetAddrInfo qw(:newapi getaddrinfo);
+use Socket::GetAddrInfo qw(:constants getaddrinfo getnameinfo);
 use Sys::Hostname;
 use User::pwent;
 
@@ -93,19 +93,24 @@ Returns the "canonical name" of a given hostname, according to [reverse] DNS.
 =cut
 
 sub dns_canonical {
-	return (gethostbyname(shift // hostname))[0];
+	my $name = shift // hostname;
+	my ($err, @ai) = getaddrinfo($name, undef);
+	for my $ai (@ai) {
+		my ($err, $host) = getnameinfo($ai->{addr}, NI_NAMEREQD, NIx_NOSERV);
+		return $host if !length($err);
+	}
+	warn "Could not resolve rDNS for $name, fallback to cname\n";
+	return $ai[0]->{canonname};
 }
 
 =item * getfqdn() -> $fqdn
 
 Returns the "canonical name" of current system, according to DNS.
 
-Equivalent to dns_canonical(hostname).
-
 =cut
 
 sub getfqdn {
-	return dns_canonical(hostname);
+	return (gethostbyname(shift // hostname))[0];
 }
 
 =item * make_server_fqdn($name) -> $fqdn
