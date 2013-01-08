@@ -205,7 +205,6 @@ sub ldap_connect {
 	krb5_have_tgt() ? ldap_connect_auth : ldap_connect_anon;
 }
 
-# Get and cache LDAP authzid
 sub whoami {
 	state $me;
 	if (!defined $me) {
@@ -217,15 +216,20 @@ sub whoami {
 	return $me;
 }
 
-# Call `ldapsearch` to dump raw LDIF
-sub ext_dump_ldif {
+sub ldap_dumpsearch {
 	my (%args) = @_;
-	my @cmd = ("ldapsearch", "-QLLL");
-	push @cmd, "-s", $args{scope}		if $args{scope};
-	push @cmd, "-b", $args{base}		if $args{base};
-	push @cmd, $args{filter}		if $args{filter};
-	push @cmd, @{$args{attributes}}		if $args{attributes};
-	system(@cmd);
+
+	my $raw = $args{-raw} // 0;
+	delete $args{-raw};
+
+	$ldap //= ldap_connect;
+	my $res = $ldap->search(%args);
+	ldap_check($res, $args{base}) or return;
+	if ($raw) {
+		print $_->ldif for $res->entries;
+	} else {
+		$_->dump for $res->entries;
+	}
 }
 
 sub get_server_info {
@@ -789,7 +793,16 @@ $commands{"server"} = sub {
 };
 
 $commands{"server:dump"} = sub {
-	ext_dump_ldif(base => server_dn($_), scope => "sub") for @_;
+	my $raw = 0;
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"r|raw" => \$raw);
+
+	ldap_dumpsearch(base => server_dn($_),
+			scope => "base",
+			filter => q(objectClass=*),
+			-raw => $raw) for @_;
+
 	return 0;
 };
 
@@ -1021,7 +1034,16 @@ $commands{"user"} = sub {
 };
 
 $commands{"user:dump"} = sub {
-	ext_dump_ldif(base => user_dn($_), scope => "sub") for @_;
+	my $raw = 0;
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"r|raw" => \$raw);
+
+	ldap_dumpsearch(base => user_dn($_),
+			scope => "base",
+			filter => q(objectClass=*),
+			-raw => $raw) for @_;
+
 	return 0;
 };
 
