@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+use Cluenet::Common;
+use Cluenet::Kadmin;
+
+sub krb_principal_exists {
+	my ($princ) = @_;
+	my $ldap = ldap_connect_mgmt;
+	my $dn = "krbPrincipalName=$princ,cn=CLUENET.ORG,cn=kerberos,dc=cluenet,dc=org";
+	my $res = $ldap->compare($dn, attr => "krbPrincipalName", value => $princ);
+	return ($res->is_error == 0);
+}
+
+sub acct_get_next_uid {
+	my $res = $ldap->search(
+		base => "ou=people,dc=cluenet,dc=org",
+		scope => "one",
+		filter => "objectClass=posixAccount",
+		attrs => ["uidNumber"]);
+	ldap_check($res);
+
+	1 + max map {$_->get_value("uidNumber")} $res->entries;
+}
+
+sub acct_create_user {
+	my ($user, $pass, $email, %extra) = @_;
+
+	my ($res);
+
+	unless (policy_validate_username($user)) {
+		return 0, "bad username";
+	}
+
+	unless (policy_validate_password($pass)) {
+		return 0, "bad password";
+	}
+
+	unless (policy_validate_email($email)) {
+		return 0, "bad email";
+	}
+
+	# create a Kerberos principal
+
+	my $princ = map_user_to_princ($user);
+
+	kadm_create_principal($princ, $pass);
+
+	# add a LDAP entry
+
+	my $uid = acct_get_next_uid;
+
+	my $dn = user_dn($user);
+	my %entry = (
+		objectClass => [qw[
+			top
+			person
+			organizationalPerson
+			inetOrgPerson
+			posixAccount
+			hostObject
+			authorizedServiceObject
+			cluenetUser
+			krbPrincipalAux
+			clueAuthorizedAbilityObject
+		]],
+		# posix
+		uid => $user,
+		userPassword => "{SASL}$princ",
+		uidNumber => $uid,
+		gidNumber => 25000,
+		gecos => $user,
+		homeDirectory => "/home/$user",
+		loginShell => "/bin/bash",
+		# user
+		mail => $email,
+		krbPrincipalName => $princ,
+		cn => $user,
+		gn => "(none)",
+		sn => "(none)",
+		authorizedService => ["wiki"],
+	);
+	$res = $ldap->add($dn, attr => [%entry]);
+	ldap_check($res, $dn);
+
+	my $group = "gid=g-users,ou=group,dc=cluenet,dc=org";
+	my %changes = (
+		add => {member => $dn});
+
+	$res = $ldap->modify($group, %changes);
+	ldap_check($res, $group);
+}

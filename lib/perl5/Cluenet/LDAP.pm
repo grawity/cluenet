@@ -1,100 +1,200 @@
-#!perl
 package Cluenet::LDAP;
-use common::sense;
+use warnings;
+use strict;
+use feature "state";
 use base "Exporter";
+
 use Authen::SASL;
 use Carp;
+use Cluenet;
 use Cluenet::Common;
+use Data::Dumper;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
-use Socket qw(AF_INET AF_INET6);
+use Socket::GetAddrInfo qw(:constants getnameinfo);
+
+=head1 Cluenet::LDAP
+
+Functions that use Net::LDAP.
+
+=cut
 
 our @EXPORT = qw(
-	user_dn
-	server_dn
+	user_to_dn
 	user_from_dn
-	server_from_dn
-	ldap_errmsg
+	host_to_dn
+	hostacl_to_dn
 );
 
-use constant {
-	LDAP_HOST	=> "ldap.cluenet.org",
-};
+=head2 user_to_dn($user) -> $dn
 
-my $whoami;
+Convert a Cluenet username to LDAP DN.
 
-sub user_dn {
-	my ($user) = @_;
-	if ($user =~ /^\w+=/) {
-		return $user;
-	} else {
-		return "uid=${user},ou=people,dc=cluenet,dc=org";
-	}
+=cut
+
+sub user_to_dn {
+	my $user = shift;
+
+	return "uid=${user},ou=people,dc=cluenet,dc=org";
 }
 
-sub server_dn { "cn=".make_server_fqdn(shift).",ou=servers,dc=cluenet,dc=org" }
+=head2 host_to_dn($host) -> $dn
 
-# Find the next rightmost RDN after given base
+Convert a Cluenet hostname to LDAP DN.
+
+=cut
+
+sub host_to_dn {
+	my $host = host_to_fqdn(shift);
+
+	return "cn=${host},ou=servers,dc=cluenet,dc=org";
+}
+
+=head2 hostacl_to_dn($host, $service) -> $dn
+
+Convert a Cluenet hostname and service name to Crispy-nssov LDAP DN.
+
+=cut
+
+sub hostacl_to_dn {
+	my $host = shift;
+	my $service = shift;
+
+	return "cn=${service},cn=svcAccess,".host_to_dn($host);
+}
+
+=head2 from_dn($entry_dn, $branch_dn, $value_only=0) -> ($rdn_name, $rdn_value)
+
+Find the next rightmost RDN after given base
+
+=cut
+
 sub from_dn {
-	my ($entrydn, $branchdn, $nonames) = @_;
+	my ($entry_dn, $base_dn, $value_only) = @_;
+
 	my %opts = (reverse => 1, casefold => "lower");
-	my @entry = @{ldap_explode_dn($entrydn, %opts)};
-	my @base = @{ldap_explode_dn($branchdn, %opts)};
+
+	my @entry = @{ldap_explode_dn($entry_dn, %opts)};
+	my @base = @{ldap_explode_dn($base_dn, %opts)};
+
 	for my $rdn (@base) {
-		my @brdn = %$rdn;
 		my @erdn = %{shift @entry};
-		return if ($erdn[0] ne $brdn[0]) or ($erdn[1] ne $brdn[1]);
+		my @brdn = %$rdn;
+
+		return if !(@erdn ~~ @brdn);
 	}
+
 	my @final = %{shift @entry};
-	return $nonames ? $final[1] : @final;
+	return $value_only ? $final[1] : @final;
 }
+
+=head2 user_from_dn($dn) -> $user
+
+Convert a LDAP DN to a Cluenet username.
+
+=cut
 
 sub user_from_dn {
 	my $dn = shift;
-	return ($dn =~ /^\w+=/) ? from_dn($dn, "ou=people,dc=cluenet,dc=org", 1) : $dn;
+
+	return ($dn =~ /=/)
+		? from_dn($dn, "ou=people,dc=cluenet,dc=org", 1)
+		: $dn;
 }
 
-sub server_from_dn {
+=head2 host_from_dn($dn) -> $host
+
+Convert a LDAP DN to a Cluenet server name (FQDN).
+
+=cut
+
+sub host_from_dn {
 	my $dn = shift;
-	return ($dn =~ /^\w+=/) ? from_dn($dn, "ou=servers,dc=cluenet,dc=org", 1) : $dn;
+
+	return ($dn =~ /=/)
+		? from_dn($dn, "ou=servers,dc=cluenet,dc=org", 1)
+		: $dn;
 }
 
-# Establish LDAP connection, authenticated or anonymous
-sub _connect_auth {
-	my %opts = @_;
+=head2 __ldap_connect_auth(), __ldap_connect_anon() -> $ldaph
 
-	my $ldap = Net::LDAP->new(LDAP_HOST)
-		or croak "$!";
+Establish an LDAP connection (GSSAPI-authenticated or anonymous).
 
-	my $addr = $ldap->{net_ldap_socket}->peeraddr;
-	my $af = (length($addr) == 16) ? AF_INET6 : AF_INET;
-	my $fqdn = gethostbyaddr($addr, $af);
+=cut
+
+sub __ldap_connect_auth {
+	my $ldaph = Net::LDAP->new(Cluenet::LDAP_HOST) or croak "$!";
+
+	my $peername = $ldaph->{net_ldap_socket}->peername;
+	my ($err, $host) = getnameinfo($peername);
+	if ($err) {
+		warn "Could not resolve canonical name of LDAP server: $err\n ";
+		$host = $ldaph->{net_ldap_host};
+	}
 
 	my $sasl = Authen::SASL->new(mech => "GSSAPI");
-	my $saslclient = $sasl->client_new("ldap", $fqdn);
-	my $msg = $ldap->bind(sasl => $saslclient);
-	$msg->code and die "error: ".$msg->error;
-	return $ldap;
+	my $saslclient = $sasl->client_new("ldap", $host);
+
+	my $msg = $ldaph->bind(sasl => $saslclient);
+	if ($msg->code) {
+		die "Error: ".$msg->error;
+	}
+
+	return $ldaph;
 }
 
-sub _connect_anon {
-	my $ldap = Net::LDAP->new(LDAP_HOST)
-		or croak "$!";
-	$ldap->bind;
-	return $ldap;
+sub __ldap_connect_anon {
+	my $ldaph = Net::LDAP->new(Cluenet::LDAP_HOST) or croak "$!";
+
+	my $msg = $ldaph->bind();
+	if ($msg->code) {
+		die "Error: ".$msg->error;
+	}
+
+	return $ldaph;
 }
+
+=head2 ldap_connect_auth(), ldap_connect_anon() -> $ldaph
+
+Return a singleton handle to the LDAP connection.
+
+=cut
 
 sub ldap_connect_auth {
 	our $LDAP_CONN_AUTH;
-	return $LDAP_CONN_AUTH //= _connect_auth;
+
+	return $LDAP_CONN_AUTH //= __ldap_connect_auth;
 }
 
 sub ldap_connect_anon {
-	our $LDAP_CONN_AUTH;
-	our $LDAP_CONN_ANON;
-	return $LDAP_CONN_ANON //= $LDAP_CONN_AUTH // _connect_anon;
+	our ($LDAP_CONN_AUTH, $LDAP_CONN_ANON);
+
+	return $LDAP_CONN_ANON //= ($LDAP_CONN_AUTH // __ldap_connect_anon);
 }
+
+=head2 ldap_format_error($msg, $dn?) -> $text
+
+Format an error message from given LDAP message and optional associated DN.
+
+=cut
+
+sub ldap_format_error {
+	my ($msg, $dn) = @_;
+	my $text = "LDAP error: ".$msg->error."\n";
+	if ($ENV{DEBUG}) {
+		$text .= "\tcode: ".$msg->error_name."\n";
+	}
+	if ($dn) {
+		$text .= "\tfailed: $dn\n";
+	}
+	if ($msg->dn) {
+		$text .= "\tmatched: ".$msg->dn."\n";
+	}
+	return $text;
+}
+
+=head2 Misc
 
 sub is_group_member {
 	my ($ldap, $user, $group) = @_;
@@ -111,24 +211,17 @@ sub is_group_member {
 
 # Get and cache LDAP authzid
 sub whoami {
+	state $whoami;
+
 	if (!defined $whoami) {
 		$whoami = (shift)->who_am_i->response;
 		$whoami =~ s/^u://;
 		$whoami =~ s/^dn:uid=(.+?),.*$/$1/;
 	}
+
 	return $whoami;
 }
 
-sub ldap_errmsg {
-	my ($msg, $dn) = @_;
-	my $text = "LDAP error: ".$msg->error."\n";
-	if ($dn) {
-		$text .= "\tfailed: $dn\n";
-	}
-	if ($msg->dn) {
-		$text .= "\tmatched: ".$msg->dn."\n";
-	}
-	$text;
-}
+=cut
 
 1;

@@ -1,0 +1,30 @@
+#!/usr/bin/env perl
+
+BEGIN {push @INC, "/home/grawity/src/cluenet-tools/lib/perl5"}
+
+use warnings;
+use strict;
+use Cluenet::Rpc;
+use Data::Dumper;
+
+my $host = "localhost";
+my $port = 6855;
+
+my $client = Cluenet::Rpc::Client->new;
+$client->connect_tcp($host, $port);
+
+sub input {
+	print "rpc: "; $|++; <STDIN>;
+}
+
+$client->authenticate("ANONYMOUS");
+
+while (my $r = input) {
+	my ($method, $args) = eval $r or do { warn "$@\n"; next };
+	my $res = eval {$client->rawcall($method, $args)};
+	if ($@) {
+		warn "$@";
+	} else {
+		print Dumper($res);
+	}
+}

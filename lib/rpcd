@@ -1,0 +1,37 @@
+#!/usr/bin/env perl
+
+BEGIN {push @INC, "/home/grawity/src/cluenet-tools/lib/perl5"}
+
+use warnings;
+use strict;
+use Cluenet::Rpc;
+
+my %methods;
+
+$methods{authenticate} = sub {
+	my ($self, %args) = @_;
+
+	my $in = b64_decode($args{data});
+	my $out;
+
+	if (!defined $self->{sasl_obj}) {
+		if (!defined $args{mech}) {
+			return {err => "missing parameter: mech"};
+		}
+		my $mech = uc $args{mech};
+		my $sasl = Authen::SASL->new(mech => $mech);
+		$self->{sasl_obj} = $sasl->server_new;
+		$out = $self->{sasl_obj}->server_start($in);
+	} elsif ($self->{sasl_obj}->need_step) {
+		$out = $self->{sasl_obj}->server_step($in);
+	} else {
+		return {finished => 1};
+	}
+
+	return {data => b64_encode($out)};
+};
+
+my $server = Cluenet::Rpc::Server->new;
+$server->{methods} = \%methods;
+$server->connect_stdio;
+$server->loop;
