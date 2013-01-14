@@ -729,6 +729,7 @@ $commands{"server"} = sub {
 				}
 				return ($attr, $value);
 			});
+		return ERR_SYNTAX if !$changes;
 		modify_objects($changes, map {host_to_dn($_)} @hosts);
 		ldap_exit;
 	}
@@ -971,6 +972,7 @@ $commands{"user"} = sub {
 	}
 	elsif (@changes) {
 		my $changes = parse_changelist(\@changes);
+		return ERR_SYNTAX if !$changes;
 		modify_objects($changes, map {user_to_dn($_)} @users);
 		ldap_exit;
 	}
