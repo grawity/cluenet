@@ -118,6 +118,24 @@ sub host_from_dn {
 		: $dn;
 }
 
+=head2 parse_hostservice($str) -> ($host, $service)
+
+Split a "host/service" (or "host/service/rest") string into $host and $service
+(and? $rest), then convert $host into a FQDN.
+
+=cut
+
+sub parse_hostservice_safe {
+	my $str = shift;
+
+	my ($host, $service, $rest) = split(m!/!, $str, 3);
+	unless (length($host) + length($service)) {
+		croak "Syntax error: empty host or service in '$str'";
+	}
+
+	return host_to_fqdn($host), $service, $rest;
+}
+
 =head2 parse_changelist(\@args, %options) -> \%changes
 
 Parse a list of attribute assignments into LDAP Modify operation parameters.

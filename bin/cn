@@ -109,19 +109,6 @@ sub format_address {
 	}
 }
 
-sub parse_hostservice {
-	my ($host, $service, $rest) = split m|/|, shift, 3;
-	return (host_to_fqdn($host), $service, $rest);
-}
-
-sub parse_hostservice_safe {
-	my ($host, $service, $rest) = split m|/|, shift, 3;
-	unless ($host and $service) {
-		die "syntax error: empty host or service: '$host/$service'\n";
-	}
-	return (host_to_fqdn($host), $service, $rest);
-}
-
 sub str_bool {
 	given (shift) {
 		return 1 if !defined $_;
@@ -410,11 +397,10 @@ sub usage {
 sub mgmt_access_get_users {
 	my ($ldap, $host, $service) = @_;
 	my $dn = hostacl_to_dn($host, $service);
-	my $res = $ldap->search(
-		base => $dn,
-		scope => "base",
-		filter => q(objectClass=*),
-		attrs => ["member"]);
+	my $res = $ldap->search(base => $dn,
+				scope => "base",
+				filter => q(objectClass=*),
+				attrs => ["member"]);
 	ldap_check($res, $dn) or return;
 	my @users;
 	for my $entry ($res->entries) {
@@ -446,15 +432,9 @@ $commands{"access"} = sub {
 	my (@services, @users, @add, @del);
 
 	for (@_) {
-		when (m!^\+(.+)$!) {
-			push @add, $1;
-		}
-		when (m!^-(.+)$!) {
-			push @del, $1;
-		}
-		when (m!^=(.+)$!) {
-			push @users, $1;
-		}
+		when (m!^\+(.+)$!) { push @add, $1; }
+		when (m!^-(.+)$!)  { push @del, $1; }
+		when (m!^=(.+)$!)  { push @users, $1; }
 		when (m!/!) {
 			my ($h, $s) = parse_hostservice_safe($_);
 			if ($s eq 'shell') {
@@ -505,11 +485,10 @@ $commands{"access"} = sub {
 					$base = hostacl_to_dn($host, $service);
 				}
 				status "Searching in ACL: $host/$service";
-				my $res = $ldap->search(
-						base => $base,
-						scope => "sub",
-						filter => $filter,
-						attrs => ["cn", "member"]);
+				my $res = $ldap->search(base => $base,
+							scope => "sub",
+							filter => $filter,
+							attrs => ["cn", "member"]);
 				ldap_check($res, $base) or next;
 				push @results, $res->entries;
 				done;
@@ -517,11 +496,10 @@ $commands{"access"} = sub {
 		} else {
 			my $base = "ou=servers,dc=cluenet,dc=org";
 			status "Searching in all server ACLs...";
-			my $res = $ldap->search(
-					base => $base,
-					scope => "sub",
-					filter => $filter,
-					attrs => ["cn", "member"]);
+			my $res = $ldap->search(base => $base,
+						scope => "sub",
+						filter => $filter,
+						attrs => ["cn", "member"]);
 			ldap_check($res, $base) or next;
 			push @results, $res->entries;
 			done;
@@ -539,10 +517,10 @@ $commands{"access"} = sub {
 		}
 		printf("%-30s\t%s\n",
 			$_->{host}."/".$_->{service}, $_->{user}) for
-			sort {$a->{user} cmp $b->{user}}
-			sort {$a->{host} cmp $b->{host}}
-			sort {$a->{service} cmp $b->{service}}
-			@output;
+				sort {$a->{user} cmp $b->{user}}
+				sort {$a->{host} cmp $b->{host}}
+				sort {$a->{service} cmp $b->{service}}
+				@output;
 
 	}
 	elsif (@services) {
