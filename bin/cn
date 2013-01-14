@@ -221,7 +221,7 @@ sub get_server_info {
 	my ($host) = @_;
 	my $dn = host_to_dn($host);
 	if (!exists $cache{$dn}) {
-		status "Looking up server: ".server_from_dn($dn);
+		status "Looking up server: ".host_from_dn($dn);
 		my $res = $ldap->search(
 				base => $dn,
 				scope => "base",
@@ -472,6 +472,7 @@ $commands{"access"} = sub {
 	}
 	elsif (@users) {
 		$ldap = ldap_connect_anon;
+
 		my @filters = map {"(member=$_)"} map {user_to_dn($_)} @users;
 		my $filter = "(&(objectClass=groupOfNames)(|".join("", @filters)."))";
 		my @results;
@@ -479,7 +480,7 @@ $commands{"access"} = sub {
 			for (@services) {
 				my ($host, $service) = @$_;
 				my $base;
-				if ($service eq 'all') {
+				if ($service eq "all") {
 					$base = host_to_dn($host);
 				} else {
 					$base = hostacl_to_dn($host, $service);
@@ -491,8 +492,8 @@ $commands{"access"} = sub {
 							attrs => ["cn", "member"]);
 				ldap_check($res, $base) or next;
 				push @results, $res->entries;
-				done;
 			}
+			done;
 		} else {
 			my $base = "ou=servers,dc=cluenet,dc=org";
 			status "Searching in all server ACLs...";
@@ -504,10 +505,10 @@ $commands{"access"} = sub {
 			push @results, $res->entries;
 			done;
 		}
-		# Certainly not pretty, but this will do.
+
 		my @output;
 		for my $entry (@results) {
-			my $host = server_from_dn($entry->dn);
+			my $host = host_from_dn($entry->dn);
 			my $service = ($entry->get_value("cn"))[0];
 			push @output,
 				map {{host => $host, service => $service, user => $_}}
@@ -515,12 +516,11 @@ $commands{"access"} = sub {
 				map {user_from_dn($_)}
 				$entry->get_value("member");
 		}
-		printf("%-30s\t%s\n",
-			$_->{host}."/".$_->{service}, $_->{user}) for
-				sort {$a->{user} cmp $b->{user}}
-				sort {$a->{host} cmp $b->{host}}
-				sort {$a->{service} cmp $b->{service}}
-				@output;
+
+		printf("%-30s\t%s\n", $_->{host}."/".$_->{service}, $_->{user})
+			for sort {$a->{user} cmp $b->{user}}
+			    sort {$a->{host} cmp $b->{host}}
+			    sort {$a->{service} cmp $b->{service}} @output;
 
 	}
 	elsif (@services) {
@@ -560,13 +560,15 @@ $commands{"acl"} = sub {
 			my ($res, $dn, %entry);
 
 			$dn = "cn=svcAccess,".host_to_dn($host);
-			$res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=*), attrs => []);
+			$res = $ldap->search(
+					base => $dn,
+					scope => "base",
+					filter => q(objectClass=*),
+					attrs => []);
 			if (!$res->count) {
-				print "Creating ACL subtree: $host\n";
+				print "Creating ACL subtree for $host\n";
 				%entry = (
-					objectClass => ["groupOfGroups"],
-					cn => "svcAccess",
+					objectClass => "groupOfGroups",
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
 				ldap_check($res, $dn);
@@ -577,11 +579,10 @@ $commands{"acl"} = sub {
 
 				print "Creating ACL: $host/$service\n";
 
-				$dn = "cn=$service,cn=svcAccess,".host_to_dn($host);
+				$dn = hostacl_to_dn($host, $service);
 				%entry = (
-					objectClass => ["groupOfNames"],
-					cn => $service,
-					member => [user_to_dn(whoami)],
+					objectClass => "groupOfNames",
+					member => user_to_dn(whoami),
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
 				ldap_check($res, $dn);
@@ -593,6 +594,7 @@ $commands{"acl"} = sub {
 				$res = $ldap->modify($dn, add => \%entry);
 				ldap_check($res, $dn);
 			}
+
 			for my $service (@del) {
 				my ($dn, $res, %entry);
 
@@ -613,39 +615,39 @@ $commands{"acl"} = sub {
 	else {
 		$ldap = ldap_connect_anon;
 		for my $host (@hosts) {
-			# authz = authorizedService attributes
-			# acl = cn=svcAccess subentry
-			my ($res, %services, @svcs_authz, @svcs_acl);
+			my ($dn, $res);
 
-			my $dn = host_to_dn($host);
-			$res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=*), attrs => ["authorizedService"]);
+			$dn = host_to_dn($host);
+			$res = $ldap->search(
+					base => $dn,
+					scope => "base",
+					filter => q(objectClass=*),
+					attrs => ["authorizedService"]);
 			ldap_check($res, $dn);
 
-			for my $entry ($res->entries) {
-				push @svcs_authz, $entry->get_value("authorizedService");
-			}
+			my @svcs_authz = map {$_->get_value("authorizedService")} $res->entries;
+			my %svcs_authz = map {$_ => 1} @svcs_authz;
 
 			$dn = "cn=svcAccess,".host_to_dn($host);
-			$res = $ldap->search(base => $dn, scope => "one",
-				filter => q(objectClass=groupOfNames), attrs => ["cn"]);
-			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			$res = $ldap->search(
+					base => $dn,
+					scope => "one",
+					filter => q(objectClass=groupOfNames),
+					attrs => ["cn"]);
+			ldap_check($res, $dn);
 
-			for my $entry ($res->entries) {
-				push @svcs_acl, $entry->get_value("cn");
-			}
+			my @svcs_acl = map {$_->get_value("cn")} $res->entries;
+			my %svcs_acl = map {$_ => 1} @svcs_acl;
 
-			# create a hash of $service => [has_authz, has_acl]
-			%services = map {$_ => [1, undef]} @svcs_authz;
-			$services{$_}->[1] = 1 for @svcs_acl;
+			# print the union of all found services
 
+			my %services = map {$_ => 1} (@svcs_acl, @svcs_authz);
 			for my $svc (sort keys %services) {
-				my ($has_authz, $has_acl) = @{$services{$svc}};
-				if (!$has_authz) {
-					warn "warning: service '$svc' not listed as authorizedService\n";
+				if (@svcs_authz and !($svc ~~ %svcs_authz)) {
+					warn "Warning: service '$svc' not listed as authorizedService\n";
 				}
-				if (!$has_acl) {
-					warn "warning: service '$svc' does not have an ACL\n";
+				if (@svcs_acl and !($svc ~~ %svcs_acl)) {
+					warn "Warning: service '$svc' does not have an ACL\n";
 				}
 				print "$host/$svc\n";
 			}

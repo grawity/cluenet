@@ -24,8 +24,10 @@ our @EXPORT = qw(
 	user_to_dn
 	user_from_dn
 	host_to_dn
+	host_from_dn
 	hostacl_to_dn
 	parse_changelist
+	parse_hostservice_safe
 );
 
 =head2 user_to_dn($user) -> $dn
