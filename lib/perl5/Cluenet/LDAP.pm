@@ -1,7 +1,7 @@
 package Cluenet::LDAP;
 use warnings;
 use strict;
-use feature "state";
+use feature qw(state switch);
 use base "Exporter";
 
 use Authen::SASL;
@@ -25,6 +25,7 @@ our @EXPORT = qw(
 	user_from_dn
 	host_to_dn
 	hostacl_to_dn
+	parse_changelist
 );
 
 =head2 user_to_dn($user) -> $dn
@@ -117,6 +118,77 @@ sub host_from_dn {
 		: $dn;
 }
 
+=head2 parse_changelist(\@args, %options) -> \%changes
+
+Parse a list of attribute assignments into LDAP Modify operation parameters.
+
+Arguments:
+
+    attr=value
+    attr+=value
+    attr-=value
+    -=attr
+
+Options:
+
+    translate => sub ($attr, $value) -> ($attr, $value)
+
+=cut
+
+sub parse_changelist {
+	my ($args, %opts) = @_;
+	my %changes;
+	my %attrs;
+
+	for (@$args) {
+		/^(?<attr>\w+)(?<op>=|\+=|-=)(?<value>.*)$ | ^(?<op>-=)(?<attr>\w+)$/x
+			or do { warn "Error: Invalid operation: $_\n"; return undef; };
+		my ($attr, $op, $value) = ($+{attr}, $+{op}, $+{value});
+
+		if ($opts{translate}) {
+			($attr, $value) = $opts{translate}->($attr, $value);
+		}
+
+		given ($op) {
+			when ("=") {
+				push @{$changes{replace}{$attr}}, $value;
+				$attrs{$attr}{replace}++;
+			}
+			when ("+=") {
+				push @{$changes{add}{$attr}}, $value;
+				$attrs{$attr}{add}++;
+			}
+			when ("-=") {
+				if (defined $value) {
+					push @{$changes{delete}{$attr}}, $value;
+					$attrs{$attr}{delete}++;
+				} else {
+					$changes{delete}{$attr} = [];
+					$attrs{$attr}{delattr}++;
+				}
+			}
+			default {
+				warn "Error: Unsupported operation: '$op' for '$attr'\n";
+				return undef;
+			}
+		}
+	}
+	for my $attr (keys %attrs) {
+		my $n = $attrs{$attr};
+		if (($n->{add} || $n->{replace}) && $n->{delattr}) {
+			warn "Error: When deleting an attribute with '-attr', assignment operators '=' and\n";
+			warn "  '-=' will be ignored -- the attribute will be deleted anyway.\n";
+			return undef;
+		}
+		if (($n->{add} || $n->{delete}) && $n->{replace}) {
+			warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
+			warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
+			return undef;
+		}
+	}
+	return \%changes;
+}
+
 =head2 __ldap_connect_auth(), __ldap_connect_anon() -> $ldaph
 
 Establish an LDAP connection (GSSAPI-authenticated or anonymous).
@@ -193,35 +265,5 @@ sub ldap_format_error {
 	}
 	return $text;
 }
-
-=head2 Misc
-
-sub is_group_member {
-	my ($ldap, $user, $group) = @_;
-	
-	my $is_member = 0;
-	my $res = $ldap->search(base => $group, scope => "base",
-		filter => q(objectClass=*), attrs => ["member"]);
-	$res->is_error and return 0;
-	for my $entry ($res->entries) {
-		$is_member += grep {user_from_dn($_) eq $user} $entry->get_value("member");
-	}
-	return $is_member;
-}
-
-# Get and cache LDAP authzid
-sub whoami {
-	state $whoami;
-
-	if (!defined $whoami) {
-		$whoami = (shift)->who_am_i->response;
-		$whoami =~ s/^u://;
-		$whoami =~ s/^dn:uid=(.+?),.*$/$1/;
-	}
-
-	return $whoami;
-}
-
-=cut
 
 1;

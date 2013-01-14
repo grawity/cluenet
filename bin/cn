@@ -384,59 +384,6 @@ sub ldap_check {
 	}
 }
 
-# parse "attr=value", "attr+=value", ... list of changes into a LDAP modify operation
-
-sub parse_changelist {
-	my ($args, %opts) = @_;
-	my %changes;
-	my %attrs;
-
-	for (@$args) {
-		/^(?<attr>\w+)(?<op>=|\+=|-=)(?<value>.*)$ | ^(?<op>-=)(?<attr>\w+)$/x
-			or do { warn "Error: Invalid operation: $_\n"; exit ERR_SYNTAX };
-		my ($attr, $op, $value) = ($+{attr}, $+{op}, $+{value});
-		if ($opts{translate}) {
-			($attr, $value) = $opts{translate}->($attr, $value);
-		}
-		given ($op) {
-			when ("=") {
-				push @{$changes{replace}{$attr}}, $value;
-				$attrs{$attr}{replace}++;
-			}
-			when ("+=") {
-				push @{$changes{add}{$attr}}, $value;
-				$attrs{$attr}{add}++;
-			}
-			when ("-=") {
-				if (defined $value) {
-					push @{$changes{delete}{$attr}}, $value;
-					$attrs{$attr}{delete}++;
-				} else {
-					$changes{delete}{$attr} = [];
-					$attrs{$attr}{delattr}++;
-				}
-			}
-			default {
-				warn "Error: Unsupported operation: '$op' for '$attr'\n";
-				exit ERR_SYNTAX;
-			}
-		}
-	}
-	for my $attr (keys %attrs) {
-		my $n = $attrs{$attr};
-		if (($n->{add} || $n->{replace}) && $n->{delattr}) {
-			warn "Error: When deleting an attribute with '-attr', assignment operators '=' and\n";
-			warn "  '-=' will be ignored -- the attribute will be deleted anyway.\n";
-			exit ERR_SYNTAX;
-		}
-		if (($n->{add} || $n->{delete}) && $n->{replace}) {
-			warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
-			warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
-			exit ERR_SYNTAX;
-		}
-	}
-	return \%changes;
-}
 
 # apply a LDAP modify operation to several objects
 
