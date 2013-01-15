@@ -1,10 +1,9 @@
-#!perl
 use warnings;
 use strict;
 
 package Cluenet::Rpc;
-
 use base "Exporter";
+
 use MIME::Base64;
 
 our @EXPORT = qw(
@@ -23,7 +22,40 @@ use Carp;
 use IO::Handle;
 use JSON;
 
+=head1 Cluenet::Rpc::Connection
+
+Implements the Rpc transport protocol, including low-level seqpacket-over-tcp
+and high-level serialized-JSON.
+
+=cut
+
 my $JSON = JSON->new->allow_nonref(1);
+
+=head2 serialize($ref) -> $buf
+
+Serialize a hashref or arrayref to a JSON string.
+
+=cut
+
+sub serialize {
+	return $JSON->encode(shift // {});
+}
+
+=head2 unserialize($buf) -> $ref
+
+Unserialize a JSON string.
+
+=cut
+
+sub unserialize {
+	return $JSON->decode(shift || '{}');
+}
+
+=head2 CLASS->new($read_fd, [$write_fd])
+
+TODO
+
+=cut
 
 sub new {
 	my ($class, $rfd, $wfd) = @_;
@@ -45,12 +77,25 @@ sub close {
 	$self->{rfd}->close;
 }
 
+=head2 $self->send_packed($buffer)
+
+Send a buffer prefixed with length.
+
+=cut
+
 sub send_packed {
 	my ($self, $buf) = @_;
 	$self->{wfd}->printf('NullRPC:%08x', length($buf));
 	$self->{wfd}->print($buf);
 	$self->{wfd}->flush();
 }
+
+=head2 $self->recv_packed() -> $buffer
+
+Receive 16 bytes containing a magic number & packet length, then return a
+buffer of size $length.
+
+=cut
 
 sub recv_packed {
 	my ($self) = @_;
@@ -77,13 +122,11 @@ sub recv_packed {
 	return $buf;
 }
 
-sub serialize {
-	return $JSON->encode(shift // {});
-}
+=head2 $self->send($ref)
 
-sub unserialize {
-	return $JSON->decode(shift || '{}');
-}
+Serialize and send a hashref or arrayref.
+
+=cut
 
 sub send {
 	my ($self, $obj) = @_;
@@ -94,6 +137,12 @@ sub send {
 	}
 	$self->send_packed($buf);
 }
+
+=head2 $self->recv() -> $ref
+
+Receive and unserialize a hashref or arrayref.
+
+=cut
 
 sub recv {
 	my ($self) = @_;
