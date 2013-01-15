@@ -12,10 +12,10 @@ sub krb_principal_exists {
 
 sub acct_get_next_uid {
 	my $res = $ldap->search(
-		base => "ou=people,dc=cluenet,dc=org",
-		scope => "one",
-		filter => "objectClass=posixAccount",
-		attrs => ["uidNumber"]);
+			base => "ou=people,dc=cluenet,dc=org",
+			scope => "one",
+			filter => "objectClass=posixAccount",
+			attrs => ["uidNumber"]);
 	ldap_check($res);
 
 	1 + max map {$_->get_value("uidNumber")} $res->entries;
@@ -48,7 +48,7 @@ sub acct_create_user {
 
 	my $uid = acct_get_next_uid;
 
-	my $dn = user_dn($user);
+	my $dn = user_to_dn($user);
 	my %entry = (
 		objectClass => [qw[
 			top
@@ -82,8 +82,7 @@ sub acct_create_user {
 	ldap_check($res, $dn);
 
 	my $group = "gid=g-users,ou=group,dc=cluenet,dc=org";
-	my %changes = (
-		add => {member => $dn});
+	my %changes = (add => {member => $dn});
 
 	$res = $ldap->modify($group, %changes);
 	ldap_check($res, $group);

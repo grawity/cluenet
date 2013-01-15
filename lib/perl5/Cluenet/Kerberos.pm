@@ -1,36 +1,65 @@
-#!perl
 package Cluenet::Kerberos;
+use feature qw(state);
 use warnings;
 use strict;
 use base "Exporter";
+
 use Authen::Krb5;
-use Authen::Krb5::Simple;
-use Carp;
-use Cluenet::Common;
-use File::Spec;
-use File::stat;
-use File::Temp qw(tempfile);
-use User::pwent;
+#use Authen::Krb5::Simple;
+#use Carp;
+#use Cluenet::Common;
+#use File::Spec;
+#use File::stat;
+#use File::Temp qw(tempfile);
+#use User::pwent;
 
 our @EXPORT = qw(
-	krb5_kuserok
-	krb5_canonuser
-	krb5_checkpass
-	krb5_ensure_tgt
-	kinit_as_user
-	kinit_as_service
-	);
+);
+
+=head2 krb_init_context() -> $context
+
+Return a singleton Authen::Krb5::Context object.
+
+=cut
+
+sub krb_init_context {
+	state $context;
+	if (!defined $context) {
+		$context = Authen::Krb5::init_context;
+	}
+	return $context;
+}
+
+krb_init_context;
+
+=head2 Authen::Krb5::Principal::unparse() -> $principal
+
+=cut
+
+package Authen::Krb5::Principal;
+use overload q[""] => \&unparse;
+
+use Carp;
+
+sub new {
+	my ($class, $princ) = @_;
+
+	Authen::Krb5::parse_name($princ);
+}
+
+sub unparse {
+	my ($self) = @_;
+
+	join("@", join("/", $self->data), $self->realm);
+}
+
+
+
+
+
+=fooooo
 
 our $krb5_ctx = Authen::Krb5::init_context;
-
-sub parse_principal {
-	Authen::Krb5::parse_name(shift);
-}
-
-sub unparse_principal {
-	my $p = shift;
-	join("@", join("/", $p->data), $p->realm);
-}
 
 sub krb5_kuserok {
 	my ($authzid, $princ) = @_;
@@ -133,17 +162,6 @@ sub kinit {
 	return $ccache;
 }
 
-package Authen::Krb5::Principal;
-use overload '""' => \&unparse;
-use Carp;
-
-sub new {
-	my ($class, $princ) = @_;
-	Authen::Krb5::parse_name($princ // croak "Usage: ${class}>new(principal)");
-}
-
-sub unparse {
-	Cluenet::Kerberos::unparse_principal(shift);
-}
+=cut
 
 1;

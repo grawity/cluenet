@@ -11,8 +11,8 @@ use Cluenet::Common;
 use Data::Dumper;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
-use Net::LDAP::Util qw(ldap_explode_dn);
-use Socket::GetAddrInfo qw(:constants getnameinfo);
+use Net::LDAP::Util	qw(ldap_explode_dn);
+use Socket::GetAddrInfo	qw(:constants getnameinfo);
 
 =head1 Cluenet::LDAP
 

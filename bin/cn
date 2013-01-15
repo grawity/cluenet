@@ -1,8 +1,8 @@
 #!/usr/bin/env perl
 BEGIN {
-	push @INC, "$ENV{CLUENET}/lib/perl5" if defined $ENV{CLUENET};
-	push @INC, "$ENV{HOME}/cluenet/lib/perl5" if -d "$ENV{HOME}/cluenet";
-	push @INC, "/cluenet/lib/perl5" if -d "/cluenet";
+	push @INC, "$ENV{CLUENET}/lib/perl5"		if defined $ENV{CLUENET};
+	push @INC, "$ENV{HOME}/cluenet/lib/perl5"	if -d "$ENV{HOME}/cluenet";
+	push @INC, "/cluenet/lib/perl5"			if -d "/cluenet";
 }
 
 use utf8;
@@ -35,6 +35,92 @@ use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
 
 $ENV{LDAPURI} = "ldap://ldap.cluenet.org";
 $ENV{LDAPBASE} = "dc=cluenet,dc=org";
+
+### LDAP functions
+
+=head2 ldap_dumpsearch(%args)
+
+Call $ldap->search and dump results to stdout in a table.
+
+Accepts the same %args as $ldap->search, with an additional parameter "-raw" to output results in LDIF instead.
+
+=cut
+
+sub ldap_dumpsearch {
+	my (%args) = @_;
+
+	my $raw = $args{-raw} // 0;
+	delete $args{-raw};
+
+	$ldap //= ldap_connect_any;
+	my $res = $ldap->search(%args);
+	ldap_check($res, $args{base}) or return;
+	if ($raw) {
+		print $_->ldif for $res->entries;
+	} else {
+		$_->dump for $res->entries;
+	}
+}
+
+=head2 ldap_whoami() -> $username
+
+Call $ldap->who_am_i, extract the username, and cache results for future calls.
+
+=cut
+
+sub ldap_whoami {
+	state $resp;
+	if (!defined $resp) {
+		$resp = $ldap->who_am_i->response;
+		$resp =~ s/^u://;
+		$resp =~ s/^dn:uid=(.+?),.*$/$1/;
+		$resp =~ s|/admin$||;
+	}
+	return $resp;
+}
+
+# TODO: localify $err to a closure
+
+my $err = 0;
+
+=head2 ldap_exit()
+
+Exit with success or failure depending on previous LDAP errors.
+
+=cut
+
+sub ldap_exit {
+	exit $err ? 1 : 0;
+}
+
+=head2 ldap_check($msg, $dn?, %args) -> $success
+
+Check if a LDAP response was successful. Print a warning to stderr on failure;
+exit if $args{die} was set. Silently skip error names in %$args{ignore}.
+
+=cut
+
+sub ldap_check {
+	my ($res, $dn, %args) = @_;
+	if ($res->is_error) {
+		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
+			return 1;
+		} else {
+			done;
+			my $msg = Cluenet::LDAP::ldap_format_error($res, $dn);
+			print STDERR "\e[33m${msg}\e[m";
+
+			++$err;
+			if ($args{die}) {
+				ldap_exit;
+			} else {
+				return 0;
+			}
+		}
+	} else {
+		return 1;
+	}
+}
 
 ### Status display
 
@@ -185,35 +271,8 @@ sub ldap_connect_anon {
 	return $r;
 }
 
-sub ldap_connect {
+sub ldap_connect_any {
 	krb5_have_tgt() ? ldap_connect_auth : ldap_connect_anon;
-}
-
-sub whoami {
-	state $me;
-	if (!defined $me) {
-		$me = $ldap->who_am_i->response;
-		$me =~ s/^u://;
-		$me =~ s/^dn:uid=(.+?),.*$/$1/;
-		$me =~ s|/admin$||;
-	}
-	return $me;
-}
-
-sub ldap_dumpsearch {
-	my (%args) = @_;
-
-	my $raw = $args{-raw} // 0;
-	delete $args{-raw};
-
-	$ldap //= ldap_connect;
-	my $res = $ldap->search(%args);
-	ldap_check($res, $args{base}) or return;
-	if ($raw) {
-		print $_->ldif for $res->entries;
-	} else {
-		$_->dump for $res->entries;
-	}
 }
 
 sub get_server_info {
@@ -345,30 +404,6 @@ sub print_user_info {
 	row "URL:"		=> $user->{labeledURI}
 					if $user->{labeledURI};
 	endsection;
-}
-
-my $err = 0;
-
-sub ldap_exit {
-	exit $err ? 1 : 0;
-}
-
-sub ldap_check {
-	my ($res, $dn, %args) = @_;
-	if ($res->is_error) {
-		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
-			return 1;
-		} else {
-			my $msg = Cluenet::LDAP::ldap_format_error($res, $dn);
-			done;
-			print STDERR "\e[33m${msg}\e[m";
-			++$err;
-			ldap_exit if $args{die};
-			return 0;
-		}
-	} else {
-		return 1;
-	}
 }
 
 
@@ -540,7 +575,6 @@ $commands{"acl"} = sub {
 	usage("acl <host>... [+-]<service>...") unless @_;
 
 	my (@hosts, @add, @del);
-	my $err = 0;
 
 	for (@_) {
 		when (m!^\+(.+)$!) {
@@ -582,7 +616,7 @@ $commands{"acl"} = sub {
 				$dn = hostacl_to_dn($host, $service);
 				%entry = (
 					objectClass => "groupOfNames",
-					member => user_to_dn(whoami),
+					member => user_to_dn(ldap_whoami),
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
 				ldap_check($res, $dn);
@@ -714,7 +748,7 @@ $commands{"server"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect;
+		$ldap = ldap_connect_any;
 		for my $host (@hosts) {
 			print_server_info($host);
 		}
@@ -800,7 +834,7 @@ $commands{"server:admin"} = sub {
 		}
 	} else {
 		# list admins
-		$ldap = ldap_connect;
+		$ldap = ldap_connect_any;
 		for my $host (@hosts) {
 			my $dn = host_to_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
@@ -845,7 +879,7 @@ $commands{"server:create"} = sub {
 	usage("server:create <hostname>") unless $host;
 
 	$ldap = ldap_connect_auth;
-	$owner //= whoami;
+	$owner //= ldap_whoami;
 	@address || push @address, "0.0.0.0";
 
 	my $fqdn = host_to_fqdn($host);
@@ -957,7 +991,7 @@ $commands{"user"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect;
+		$ldap = ldap_connect_any;
 		for my $user (@users) {
 			print_user_info(get_user_info($user));
 		}
@@ -997,16 +1031,16 @@ $commands{"user:chsh"} = sub {
 		}
 
 		$ldap = ldap_connect_auth;
-		my $dn = user_to_dn(whoami);
+		my $dn = user_to_dn(ldap_whoami);
 		my %entry = (loginShell => $shell);
 
-		say "Changing shell for ".whoami." to $shell";
+		say "Changing shell for ".ldap_whoami." to $shell";
 		my $res = $ldap->modify($dn, replace => \%entry);
 		ldap_check($res, $dn, die => 1);
 	}
 	else {
 		$ldap = ldap_connect_auth;
-		my $dn = user_to_dn(whoami);
+		my $dn = user_to_dn(ldap_whoami);
 		my $res = $ldap->search(base => $dn,
 					scope => "base",
 					filter => q(objectClass=posixAccount));
