@@ -219,17 +219,16 @@ sub row {
 	}
 	my @rowvalue = ();
 	my $rowlength = 0;
-	for my $item (split / /, $value) {
+	for my $item (split /\s+/, $value) {
 		if ($rowlength + length($item) > 62) {
 			printf "%-16s%s\n", $label, join(" ", @rowvalue);
 			++$_rows;
 			$label = "";
 			@rowvalue = ();
 			$rowlength = 0;
-		} else {
-			push @rowvalue, $item;
-			$rowlength += length($item) + 1;
 		}
+		push @rowvalue, $item;
+		$rowlength += length($item) + 1;
 	}
 	if (@rowvalue) {
 		printf "%-16s%s\n", $label, join(" ", @rowvalue);
