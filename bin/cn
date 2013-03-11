@@ -25,6 +25,8 @@ use POSIX;
 use POSIX::strptime;
 use Text::Format;
 
+my $term_w = int($ENV{COLUMNS} || qx(tput cols) || 80);
+
 my $ldap;
 my $cmd;
 my $exit;
@@ -219,9 +221,10 @@ sub row {
 	}
 	my @rowvalue = ();
 	my $rowlength = 0;
+	my $label_w = 19;
 	for my $item (split /\s+/, $value) {
-		if ($rowlength + length($item) > 62) {
-			printf "%-16s%s\n", $label, join(" ", @rowvalue);
+		if ($rowlength + length($item) > ($term_w-$label_w-2)) {
+			printf "%-*s%s\n", $label_w, $label, join(" ", @rowvalue);
 			++$_rows;
 			$label = "";
 			@rowvalue = ();
@@ -231,7 +234,7 @@ sub row {
 		$rowlength += length($item) + 1;
 	}
 	if (@rowvalue) {
-		printf "%-16s%s\n", $label, join(" ", @rowvalue);
+		printf "%-*s%s\n", $label_w, $label, join(" ", @rowvalue);
 		++$_rows;
 	}
 }
