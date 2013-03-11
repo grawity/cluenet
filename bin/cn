@@ -405,6 +405,10 @@ sub print_user_info {
 					if $user->{mail};
 	row "URL:"		=> $user->{labeledURI}
 					if $user->{labeledURI};
+	row "allowed services:"	=> join(", ", sort @{$user->{authorizedService}})
+					if $user->{authorizedService};
+	row "allowed hosts:"	=> join(",  ", sort @{$user->{host}})
+					if $user->{host};
 	endsection;
 }
 
