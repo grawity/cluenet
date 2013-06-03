@@ -368,8 +368,7 @@ sub print_server_info {
 
 sub get_user_info {
 	state %cache;
-	my ($user) = @_;
-	my $dn = user_to_dn($user);
+	my ($dn) = @_;
 	if (!exists $cache{$dn}) {
 		status "Looking up user: ".user_from_dn($dn);
 		my $res = $ldap->search(
