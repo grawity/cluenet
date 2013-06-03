@@ -1,4 +1,2 @@
-lib/i686
-lib/nssov
-sbin/bnlutil
-sbin/cluevpn
+/lib/i686
+/lib/nssov
