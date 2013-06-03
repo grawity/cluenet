@@ -1,29 +1,32 @@
-#!perl
 package Cluenet::Common;
+use warnings;
+use strict;
 use base "Exporter";
-use common::sense;
+
 use Carp;
 use IO::Handle;
-#use Socket::GetAddrInfo qw(:newapi getaddrinfo);
+use Socket::GetAddrInfo qw(:constants getaddrinfo getnameinfo);
 use Sys::Hostname;
 use User::pwent;
 
+=head1 Cluenet::Common
+
+Miscellaneous functions that don't have large dependencies.
+
+=cut
+
 our @EXPORT = qw(
 	dns_canonical
+	dns_fqdn
 	dns_match
 	dns_match_zone
 	dns_qualify
-	getfqdn
-	make_server_fqdn
+	host_to_fqdn
 	file_read_line
 	gen_passwd
-	is_valid_user
-	is_global_user
 );
 
-=over
-
-=item * dns_match($domain, $subdomain) -> $matched
+=head2 dns_match($domain, $subdomain) -> bool $matched
 
 Checks if DNS-like $subdomain equals or belongs to $domain.
 
@@ -32,6 +35,7 @@ Checks if DNS-like $subdomain equals or belongs to $domain.
 sub dns_match {
 	my @a = reverse split(/\./, lc shift);
 	my @b = reverse split(/\./, lc shift);
+
 	return 1 if !@a;
 	return 0 if @a > @b;
 	for my $i (0..$#a) {
@@ -40,20 +44,24 @@ sub dns_match {
 	return scalar @a;
 }
 
-=item * dns_match_zone($domain, @zones) -> @zones
+=head2 dns_match_zone($domain, @zones) -> @zones
 
-Finds the most specific zone that $domain belongs to.
+Finds all zones that $domain belongs to, starting with most specific.
 
 =cut
 
 sub dns_match_zone {
 	my ($domain, @zones) = @_;
-	my @matches = sort {length $b <=> length $a}
-		grep {dns_match($_, $domain)} @zones;
-	return wantarray ? @matches : shift(@matches);
+
+	my @matches =
+		sort {length $b <=> length $a}
+		grep {dns_match($_, $domain)}
+		@zones;
+
+	return @matches;
 }
 
-=item * dns_qualify($name, $zone, $relative=1) -> $fqdn
+=head2 dns_qualify($name, $zone, $relative=1) -> $fqdn
 
 Qualifies the given DNS $name, which may be "@".
 
@@ -67,6 +75,7 @@ Names ending with a . are always considered qualified.
 
 sub dns_qualify {
 	my ($domain, $zone, $relative) = @_;
+
 	if ($relative) {
 		$zone =~ s/\.$//;
 		return $zone	if $domain eq '@';
@@ -86,43 +95,55 @@ sub dns_qualify {
 	}
 }
 
-=item * dns_canonical($name) -> $fqdn
+=head2 dns_canonical($name) -> $fqdn
 
 Returns the "canonical name" of a given hostname, according to [reverse] DNS.
 
 =cut
 
 sub dns_canonical {
-	return (gethostbyname(shift // hostname))[0];
+	my $name = shift;
+
+	my ($err, @ai) = getaddrinfo($name, 0);
+	for my $ai (@ai) {
+		my ($err, $host) = getnameinfo($ai->{addr}, NI_NAMEREQD);
+		return $host if !length($err);
+	}
+	warn "Could not resolve rDNS for $name, fallback to cname\n";
+	return $ai[0]->{canonname};
 }
 
-=item * getfqdn() -> $fqdn
+=head2 dns_fqdn([$name]) -> $fqdn
 
-Returns the "canonical name" of current system, according to DNS.
-
-Equivalent to dns_canonical(hostname).
+Returns the FQDN of given hostname or current system -- but not necessarily the
+reverse DNS name (e.g. it sometimes doesn't follow cnames).
 
 =cut
 
-sub getfqdn {
-	return dns_canonical(hostname);
+sub dns_fqdn {
+	my $name = shift // hostname;
+
+	return (gethostbyname($name))[0];
 }
 
-=item * make_server_fqdn($name) -> $fqdn
+=head2 host_to_fqdn($name) -> $fqdn
 
 Converts a Cluenet hostname into a FQDN, appending ".cluenet.org" if necessary,
 ignoring reverse DNS.
 
+    equal -> equal.cluenet.org
+
+    example.tld -> example.tld
+
 =cut
 
-sub make_server_fqdn {
+sub host_to_fqdn {
 	my $name = shift;
-	return dns_match("cluenet.org", $name)
-		? dns_qualify($name, "", 1)
-		: dns_qualify($name, "cluenet.org", 1);
+
+	return dns_qualify($name, "cluenet.org", 2);
 }
 
-=item * file_read_line($file) -> $line
+=head2 file_read_line($file) -> $line
 
 Read a single line from a file.
 
@@ -139,7 +160,7 @@ sub file_read_line {
 	}
 }
 
-=item * gen_passwd([$length]) -> $password
+=head2 gen_passwd([$length]) -> $password
 
 Generate a random password.
 
@@ -147,19 +168,11 @@ Generate a random password.
 
 sub gen_passwd {
 	my $len = shift // 12;
+
 	my @chars = ('A'..'Z', 'a'..'z', '0'..'9');
-	my $chars = @chars;
-	return join "", map {$chars[int rand $chars]} 1..$len;
-}
+	my $num = @chars;
 
-sub is_valid_user {
-	my $pw = getpwnam(shift);
-	return defined $pw && $pw->uid >= 1000;
-}
-
-sub is_global_user {
-	my $pw = getpwnam(shift);
-	return defined $pw && $pw->uid >= 25000;
+	return join "", map {$chars[int rand $num]} 1..$len;
 }
 
 1;

@@ -1,22 +1,18 @@
 #!/usr/bin/env perl
 BEGIN {
-	push @INC, "$ENV{CLUENET}/lib/perl5" if defined $ENV{CLUENET};
-	push @INC, "$ENV{HOME}/cluenet/lib/perl5" if -d "$ENV{HOME}/cluenet";
-	push @INC, "/cluenet/lib/perl5" if -d "/cluenet";
+	push @INC, "$ENV{CLUENET}/lib/perl5"		if defined $ENV{CLUENET};
+	push @INC, "$ENV{HOME}/cluenet/lib/perl5"	if -d "$ENV{HOME}/cluenet";
+	push @INC, "/cluenet/lib/perl5"			if -d "/cluenet";
 }
 
-use v5.14.0;
 use utf8;
+use feature qw(say switch state);
 use warnings;
 use strict;
-use feature qw(say state switch);
 
 use constant ERR_SYNTAX => 2;
 
-use Authen::SASL;
-use Cluenet::Common qw(
-	make_server_fqdn
-);
+use Cluenet::Common;
 use Cluenet::LDAP;
 use Data::Dumper;
 use Getopt::Long qw(:config posix_default no_ignore_case);
@@ -25,14 +21,16 @@ use Net::IP;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
-use POSIX qw(strftime);
+use POSIX;
 use POSIX::strptime;
-use Socket;
 use Text::Format;
+
+my $term_w = int($ENV{COLUMNS} || qx(tput cols) || 80);
 
 my $ldap;
 my $cmd;
 my $exit;
+my $status = (-t 2) && !exists($ENV{CN_NO_STATUS});
 my %commands;
 
 use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
@@ -40,13 +38,107 @@ use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
 $ENV{LDAPURI} = "ldap://ldap.cluenet.org";
 $ENV{LDAPBASE} = "dc=cluenet,dc=org";
 
+### Status display
+
 sub status {
-	print STDERR "\r\033[K",
-		"\033[38;5;10m", shift, "\033[m"; $|++;
+	if ($status) {
+		print STDERR "\r\033[K",
+			"\033[38;5;10m", shift, "\033[m";
+		$|++;
+	}
 }
 
 sub done {
-	print STDERR "\r\033[K"; $|++;
+	if ($status) {
+		print STDERR "\r\033[K";
+		$|++;
+	}
+}
+
+### LDAP functions
+
+=head2 ldap_dumpsearch(%args)
+
+Call $ldap->search and dump results to stdout in a table.
+
+Accepts the same %args as $ldap->search, with an additional parameter "-raw" to output results in LDIF instead.
+
+=cut
+
+sub ldap_dumpsearch {
+	my (%args) = @_;
+
+	my $raw = $args{-raw} // 0;
+	delete $args{-raw};
+
+	$ldap //= ldap_connect_any();
+	my $res = $ldap->search(%args);
+	ldap_check($res, $args{base}) or return;
+	if ($raw) {
+		print $_->ldif for $res->entries;
+	} else {
+		$_->dump for $res->entries;
+	}
+}
+
+=head2 ldap_whoami() -> $username
+
+Call $ldap->who_am_i, extract the username, and cache results for future calls.
+
+=cut
+
+sub ldap_whoami {
+	state $resp;
+	if (!defined $resp) {
+		$resp = $ldap->who_am_i->response;
+		$resp =~ s/^u://;
+		$resp =~ s/^dn:uid=(.+?),.*$/$1/;
+		$resp =~ s|/admin$||;
+	}
+	return $resp;
+}
+
+# TODO: localify $err to a closure
+
+my $err = 0;
+
+=head2 ldap_exit()
+
+Exit with success or failure depending on previous LDAP errors.
+
+=cut
+
+sub ldap_exit {
+	exit $err ? 1 : 0;
+}
+
+=head2 ldap_check($msg, $dn?, %args) -> $success
+
+Check if a LDAP response was successful. Print a warning to stderr on failure;
+exit if $args{die} was set. Silently skip error names in %$args{ignore}.
+
+=cut
+
+sub ldap_check {
+	my ($res, $dn, %args) = @_;
+	if ($res->is_error) {
+		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
+			return 1;
+		} else {
+			done;
+			my $msg = Cluenet::LDAP::ldap_format_error($res, $dn);
+			print STDERR "\e[33m${msg}\e[m";
+
+			++$err;
+			if ($args{die}) {
+				ldap_exit;
+			} else {
+				return 0;
+			}
+		}
+	} else {
+		return 1;
+	}
 }
 
 ### String and hostname manipulation
@@ -105,19 +197,6 @@ sub format_address {
 	}
 }
 
-sub parse_hostservice {
-	my ($host, $service, $rest) = split /\//, shift, 3;
-	return (make_server_fqdn($host), $service, $rest);
-}
-
-sub parse_hostservice_safe {
-	my ($host, $service, $rest) = split /\//, shift, 3;
-	unless ($host and $service) {
-		die "syntax error: empty host or service: '$host/$service'\n";
-	}
-	return (make_server_fqdn($host), $service, $rest);
-}
-
 sub str_bool {
 	given (shift) {
 		return 1 if !defined $_;
@@ -142,20 +221,20 @@ sub row {
 	}
 	my @rowvalue = ();
 	my $rowlength = 0;
-	for my $item (split / /, $value) {
-		if ($rowlength + length($item) > 62) {
-			printf "%-16s%s\n", $label, join(" ", @rowvalue);
+	my $label_w = 19;
+	for my $item (split /\s+/, $value) {
+		if ($rowlength + length($item) > ($term_w-$label_w-2)) {
+			printf "%-*s%s\n", $label_w, $label, join(" ", @rowvalue);
 			++$_rows;
 			$label = "";
 			@rowvalue = ();
 			$rowlength = 0;
-		} else {
-			push @rowvalue, $item;
-			$rowlength += length($item) + 1;
 		}
+		push @rowvalue, $item;
+		$rowlength += length($item) + 1;
 	}
 	if (@rowvalue) {
-		printf "%-16s%s\n", $label, join(" ", @rowvalue);
+		printf "%-*s%s\n", $label_w, $label, join(" ", @rowvalue);
 		++$_rows;
 	}
 }
@@ -171,7 +250,11 @@ sub krb5_have_tgt {
 sub krb5_ensure_tgt {
 	if (!krb5_have_tgt()) {
 		done;
-		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
+		if (defined $ENV{CN_NUSH}) {
+			die "\e[1;31merror:\e[m not logged in\n";
+		} else {
+			die "Kerberos ticket needed, please run 'kinit'.\n";
+		}
 	}
 }
 
@@ -190,35 +273,16 @@ sub ldap_connect_anon {
 	return $r;
 }
 
-# Get and cache LDAP authzid
-sub whoami {
-	state $me;
-	if (!defined $me) {
-		$me = $ldap->who_am_i->response;
-		$me =~ s/^u://;
-		$me =~ s/^dn:uid=(.+?),.*$/$1/;
-		$me =~ s|/admin$||;
-	}
-	return $me;
-}
-
-# Call `ldapsearch` to dump raw LDIF
-sub ext_dump_ldif {
-	my (%args) = @_;
-	my @cmd = ("ldapsearch", "-QLLL");
-	push @cmd, "-s", $args{scope}		if $args{scope};
-	push @cmd, "-b", $args{base}		if $args{base};
-	push @cmd, $args{filter}		if $args{filter};
-	push @cmd, @{$args{attributes}}		if $args{attributes};
-	system(@cmd);
+sub ldap_connect_any {
+	krb5_have_tgt() ? ldap_connect_auth : ldap_connect_anon;
 }
 
 sub get_server_info {
 	state %cache;
 	my ($host) = @_;
-	my $dn = server_dn($host);
+	my $dn = host_to_dn($host);
 	if (!exists $cache{$dn}) {
-		status "Looking up server: ".server_from_dn($dn);
+		status "Looking up server: ".host_from_dn($dn);
 		my $res = $ldap->search(
 				base => $dn,
 				scope => "base",
@@ -269,18 +333,20 @@ sub print_server_info {
 
 	my $port = $server->{sshPort} // 22;
 
+	my @status = grep {defined} (
+				$server->{isOfficial}     ? "official" : "unofficial",
+				$server->{userAccessible} ? "public"   : "private",
+				$server->{isActive}       ? "active"   : "inactive",
+				(grep {/:/} @{$server->{address}}) ? "IPv6" : undef,
+			);
+
 	row "HOSTNAME:"		=> uc $server->{cn};
 	row "created:"		=> format_date($server->{createTimestamp});
 	row "address:"		=> format_address($_, $port)
-		for @{$server->{address}};
+					for @{$server->{address}};
 	row "owner:"		=> format_name($owner);
 	row "admin:"		=> \@admins;
-	row "status:"		=> join(", ", grep {defined} (
-					$server->{isOfficial}     ? "official" : "unofficial",
-					$server->{userAccessible} ? "public"   : "private",
-					$server->{isActive}       ? "active"   : "inactive",
-					(grep {/:/} @{$server->{address}}) ? "IPv6" : undef,
-				));
+	row "status:"		=> join(", ", @status);
 	if (defined $server->{authorizedService}) {
 		my @services = sort @{$server->{authorizedService}};
 		row "services:"	=> join(", ", @services);
@@ -303,7 +369,7 @@ sub print_server_info {
 sub get_user_info {
 	state %cache;
 	my ($user) = @_;
-	my $dn = user_dn($user);
+	my $dn = user_to_dn($user);
 	if (!exists $cache{$dn}) {
 		status "Looking up user: ".user_from_dn($dn);
 		my $res = $ldap->search(
@@ -333,72 +399,19 @@ sub print_user_info {
 	row "created:"		=> format_date($user->{createTimestamp});
 	row "uid:"		=> $user->{uidNumber};
 	row "shell:"		=> $user->{loginShell} // "(unset)";
-	row "IRC account:"	=> $user->{ircServicesUser}		if $user->{ircServicesUser};
-	row "email:"		=> join(", ", @{$user->{mail}})		if $user->{mail};
-	row "URL:"		=> $user->{labeledURI}			if $user->{labeledURI};
+	row "IRC account:"	=> $user->{ircServicesUser}
+					if $user->{ircServicesUser};
+	row "email:"		=> join(", ", @{$user->{mail}})
+					if $user->{mail};
+	row "URL:"		=> $user->{labeledURI}
+					if $user->{labeledURI};
+	row "allowed services:"	=> join(", ", sort @{$user->{authorizedService}})
+					if $user->{authorizedService};
+	row "allowed hosts:"	=> join(",  ", sort @{$user->{host}})
+					if $user->{host};
 	endsection;
 }
 
-my $err = 0;
-
-sub ldap_exit {
-	exit $err ? 1 : 0;
-}
-
-sub ldap_check {
-	my ($res, $dn, %args) = @_;
-	if ($res->is_error) {
-		++$err;
-		done;
-		print STDERR "\e[33m".ldap_errmsg($res, $dn)."\e[m";
-		if ($args{die}) {
-			ldap_exit;
-		}
-		return 0;
-	} else {
-		return 1;
-	}
-}
-
-# parse "attr=value", "attr+=value", ... list of changes into a LDAP modify operation
-
-sub parse_changelist {
-	my ($args, %opts) = @_;
-	my %changes;
-	my %attrs;
-
-	for (@$args) {
-		my @m = /^(\w+)(=|\+=|-=)(.*)$/;
-		my ($attr, $op, $value) = @m;
-		if ($opts{translate}) {
-			($attr, $value) = $opts{translate}->($attr, $value);
-		}
-		given ($op) {
-			# TODO: support "delete attribute" op
-			when ("=") {
-				push @{$changes{replace}{$attr}}, $value;
-				$attrs{$attr}{replace}++;
-			}
-			when ("+=") {
-				push @{$changes{add}{$attr}}, $value;
-				$attrs{$attr}{add}++;
-			}
-			when ("-=") {
-				push @{$changes{delete}{$attr}}, $value;
-				$attrs{$attr}{delete}++;
-			}
-		}
-	}
-	for my $attr (keys %attrs) {
-		my $n = $attrs{$attr};
-		if (($n->{add} || $n->{delete}) && $n->{replace}) {
-			warn "Error: It does not make sense to combine '+=' or '-=' operators with '=' for\n";
-			warn "  the same attribute, as \"replace\" will take priority over the other two.\n";
-			exit ERR_SYNTAX;
-		}
-	}
-	return \%changes;
-}
 
 # apply a LDAP modify operation to several objects
 
@@ -422,27 +435,13 @@ sub usage {
 
 ### User interface commands
 
-sub dn_for_user {
-	return user_dn(shift);
-}
-
-sub dn_for_server {
-	return server_dn(shift);
-}
-
-sub dn_for_service_acl {
-	my ($host, $service) = @_;
-	return "cn=".$service.",cn=svcAccess,".dn_for_server($host);
-}
-
 sub mgmt_access_get_users {
 	my ($ldap, $host, $service) = @_;
-	my $dn = dn_for_service_acl($host, $service);
-	my $res = $ldap->search(
-		base => $dn,
-		scope => "base",
-		filter => q(objectClass=*),
-		attrs => ["member"]);
+	my $dn = hostacl_to_dn($host, $service);
+	my $res = $ldap->search(base => $dn,
+				scope => "base",
+				filter => q(objectClass=*),
+				attrs => ["member"]);
 	ldap_check($res, $dn) or return;
 	my @users;
 	for my $entry ($res->entries) {
@@ -453,22 +452,19 @@ sub mgmt_access_get_users {
 
 sub mgmt_access_modify {
 	my ($ldap, $host, $service, %args) = @_;
-	my $dn = dn_for_service_acl($host, $service);
+	my $dn = hostacl_to_dn($host, $service);
 	my $addusers = $args{add} // [];
 	my $delusers = $args{delete} // [];
 	my %changes = ();
 	if (@$addusers) {
-		$changes{add} = {member => [map {dn_for_user $_} @$addusers]};
+		$changes{add} = {member => [map {user_to_dn($_)} @$addusers]};
 	}
 	if (@$delusers) {
-		$changes{delete} = {member => [map {dn_for_user $_} @$delusers]};
+		$changes{delete} = {member => [map {user_to_dn($_)} @$delusers]};
 	}
 	if (%changes) {
 		my $res = $ldap->modify($dn, %changes);
-		if ($res->is_error) {
-			warn ldap_errmsg($res, $dn);
-			return undef;
-		}
+		ldap_check($res, $dn);
 	}
 	return 1;
 }
@@ -477,15 +473,9 @@ $commands{"access"} = sub {
 	my (@services, @users, @add, @del);
 
 	for (@_) {
-		when (m!^\+(.+)$!) {
-			push @add, $1;
-		}
-		when (m!^-(.+)$!) {
-			push @del, $1;
-		}
-		when (m!^=(.+)$!) {
-			push @users, $1;
-		}
+		when (m!^\+(.+)$!) { push @add, $1; }
+		when (m!^-(.+)$!)  { push @del, $1; }
+		when (m!^=(.+)$!)  { push @users, $1; }
 		when (m!/!) {
 			my ($h, $s) = parse_hostservice_safe($_);
 			if ($s eq 'shell') {
@@ -523,44 +513,43 @@ $commands{"access"} = sub {
 	}
 	elsif (@users) {
 		$ldap = ldap_connect_anon;
-		my @filters = map {"(member=$_)"} map {user_dn($_)} @users;
+
+		my @filters = map {"(member=$_)"} map {user_to_dn($_)} @users;
 		my $filter = "(&(objectClass=groupOfNames)(|".join("", @filters)."))";
 		my @results;
 		if (@services) {
 			for (@services) {
 				my ($host, $service) = @$_;
 				my $base;
-				if ($service eq 'all') {
-					$base = dn_for_server($host);
+				if ($service eq "all") {
+					$base = host_to_dn($host);
 				} else {
-					$base = dn_for_service_acl($host, $service);
+					$base = hostacl_to_dn($host, $service);
 				}
 				status "Searching in ACL: $host/$service";
-				my $res = $ldap->search(
-						base => $base,
-						scope => "sub",
-						filter => $filter,
-						attrs => ["cn", "member"]);
+				my $res = $ldap->search(base => $base,
+							scope => "sub",
+							filter => $filter,
+							attrs => ["cn", "member"]);
 				ldap_check($res, $base) or next;
 				push @results, $res->entries;
-				done;
 			}
+			done;
 		} else {
 			my $base = "ou=servers,dc=cluenet,dc=org";
 			status "Searching in all server ACLs...";
-			my $res = $ldap->search(
-					base => $base,
-					scope => "sub",
-					filter => $filter,
-					attrs => ["cn", "member"]);
+			my $res = $ldap->search(base => $base,
+						scope => "sub",
+						filter => $filter,
+						attrs => ["cn", "member"]);
 			ldap_check($res, $base) or next;
 			push @results, $res->entries;
 			done;
 		}
-		# Certainly not pretty, but this will do.
+
 		my @output;
 		for my $entry (@results) {
-			my $host = server_from_dn($entry->dn);
+			my $host = host_from_dn($entry->dn);
 			my $service = ($entry->get_value("cn"))[0];
 			push @output,
 				map {{host => $host, service => $service, user => $_}}
@@ -568,12 +557,11 @@ $commands{"access"} = sub {
 				map {user_from_dn($_)}
 				$entry->get_value("member");
 		}
-		printf("%-30s\t%s\n",
-			$_->{host}."/".$_->{service}, $_->{user}) for
-			sort {$a->{user} cmp $b->{user}}
-			sort {$a->{host} cmp $b->{host}}
-			sort {$a->{service} cmp $b->{service}}
-			@output;
+
+		printf("%-30s\t%s\n", $_->{host}."/".$_->{service}, $_->{user})
+			for sort {$a->{user} cmp $b->{user}}
+			    sort {$a->{host} cmp $b->{host}}
+			    sort {$a->{service} cmp $b->{service}} @output;
 
 	}
 	elsif (@services) {
@@ -593,14 +581,13 @@ $commands{"acl"} = sub {
 	usage("acl <host>... [+-]<service>...") unless @_;
 
 	my (@hosts, @add, @del);
-	my $err = 0;
 
 	for (@_) {
 		when (m!^\+(.+)$!) {
-			push @add, $1;
+			push @add, $1 eq 'shell' ? SHELL_SERVICES : $1;
 		}
 		when (m!^-(.+)$!) {
-			push @del, $1;
+			push @del, $1 eq 'shell' ? SHELL_SERVICES : $1;
 		}
 		default {
 			push @hosts, $_;
@@ -612,95 +599,95 @@ $commands{"acl"} = sub {
 		for my $host (@hosts) {
 			my ($res, $dn, %entry);
 
-			$dn = "cn=svcAccess,".server_dn($host);
-			$res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=*), attrs => []);
+			$dn = "cn=svcAccess,".host_to_dn($host);
+			$res = $ldap->search(
+					base => $dn,
+					scope => "base",
+					filter => q(objectClass=*),
+					attrs => []);
 			if (!$res->count) {
-				print "Creating ACL subtree: $host\n";
+				print "Creating ACL subtree for $host\n";
 				%entry = (
-					objectClass => ["groupOfGroups"],
-					cn => "svcAccess",
+					objectClass => "groupOfGroups",
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
 				ldap_check($res, $dn);
 			}
-
 
 			for my $service (@add) {
 				my ($res, $dn, %entry);
 
 				print "Creating ACL: $host/$service\n";
 
-				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
+				$dn = hostacl_to_dn($host, $service);
 				%entry = (
-					objectClass => ["groupOfNames"],
-					cn => $service,
-					member => [user_dn(whoami)],
+					objectClass => "groupOfNames",
+					member => user_to_dn(ldap_whoami),
 				);
 				$res = $ldap->add($dn, attr => [%entry]);
 				ldap_check($res, $dn);
 
-				$dn = server_dn($host);
+				$dn = host_to_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, add => \%entry);
 				ldap_check($res, $dn);
 			}
+
 			for my $service (@del) {
 				my ($dn, $res, %entry);
 
 				print "Deleting ACL: $host/$service\n";
-
-				$dn = "cn=$service,cn=svcAccess,".server_dn($host);
+				$dn = "cn=$service,cn=svcAccess,".host_to_dn($host);
 				$res = $ldap->delete($dn);
-				ldap_check($res, $dn);
+				ldap_check($res, $dn, ignore => "LDAP_NO_SUCH_OBJECT");
 
-				$dn = server_dn($host);
+				$dn = host_to_dn($host);
 				%entry = (
 					authorizedService => $service,
 				);
 				$res = $ldap->modify($dn, delete => \%entry);
-				ldap_check($res, $dn);
+				ldap_check($res, $dn, ignore => "LDAP_NO_SUCH_ATTRIBUTE");
 			}
 		}
 	}
 	else {
 		$ldap = ldap_connect_anon;
 		for my $host (@hosts) {
-			# authz = authorizedService attributes
-			# acl = cn=svcAccess subentry
-			my ($res, %services, @svcs_authz, @svcs_acl);
+			my ($dn, $res);
 
-			my $dn = server_dn($host);
-			$res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=*), attrs => ["authorizedService"]);
-			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			$dn = host_to_dn($host);
+			$res = $ldap->search(
+					base => $dn,
+					scope => "base",
+					filter => q(objectClass=*),
+					attrs => ["authorizedService"]);
+			ldap_check($res, $dn);
 
-			for my $entry ($res->entries) {
-				push @svcs_authz, $entry->get_value("authorizedService");
-			}
+			my @svcs_authz = map {$_->get_value("authorizedService")} $res->entries;
+			my %svcs_authz = map {$_ => 1} @svcs_authz;
 
-			$dn = "cn=svcAccess,".server_dn($host);
-			$res = $ldap->search(base => $dn, scope => "one",
-				filter => q(objectClass=groupOfNames), attrs => ["cn"]);
-			if ($res->is_error) { warn ldap_errmsg($res, $dn); $err++; }
+			$dn = "cn=svcAccess,".host_to_dn($host);
+			$res = $ldap->search(
+					base => $dn,
+					scope => "one",
+					filter => q(objectClass=groupOfNames),
+					attrs => ["cn"]);
+			ldap_check($res, $dn);
 
-			for my $entry ($res->entries) {
-				push @svcs_acl, $entry->get_value("cn");
-			}
+			my @svcs_acl = map {$_->get_value("cn")} $res->entries;
+			my %svcs_acl = map {$_ => 1} @svcs_acl;
 
-			# create a hash of $service => [has_authz, has_acl]
-			%services = map {$_ => [1, undef]} @svcs_authz;
-			$services{$_}->[1] = 1 for @svcs_acl;
+			# print the union of all found services
 
+			my %services = map {$_ => 1} (@svcs_acl, @svcs_authz);
 			for my $svc (sort keys %services) {
-				my ($has_authz, $has_acl) = @{$services{$svc}};
-				if (!$has_authz) {
-					warn "warning: service '$svc' not listed as authorizedService\n";
+				if (@svcs_authz and !($svc ~~ %svcs_authz)) {
+					warn "Warning: service '$svc' not listed as authorizedService\n";
 				}
-				if (!$has_acl) {
-					warn "warning: service '$svc' does not have an ACL\n";
+				if (@svcs_acl and !($svc ~~ %svcs_acl)) {
+					warn "Warning: service '$svc' does not have an ACL\n";
 				}
 				print "$host/$svc\n";
 			}
@@ -714,7 +701,7 @@ $commands{"server"} = sub {
 	my (@hosts, @changes);
 
 	for (@_) {
-		when (/=/) {
+		when (/=/ or /^-/) {
 			push @changes, $_;
 		}
 		default {
@@ -754,19 +741,20 @@ $commands{"server"} = sub {
 						$value = ldap_bool($value);
 					}
 					when ("admin") {
-						$value = user_dn($value);
+						$value = user_to_dn($value);
 					}
 					when ("owner") {
-						$value = user_dn($value);
+						$value = user_to_dn($value);
 					}
 				}
 				return ($attr, $value);
 			});
-		modify_objects($changes, map {server_dn($_)} @hosts);
+		return ERR_SYNTAX if !$changes;
+		modify_objects($changes, map {host_to_dn($_)} @hosts);
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_anon;
+		$ldap = ldap_connect_any;
 		for my $host (@hosts) {
 			print_server_info($host);
 		}
@@ -774,7 +762,16 @@ $commands{"server"} = sub {
 };
 
 $commands{"server:dump"} = sub {
-	ext_dump_ldif(base => server_dn($_), scope => "sub") for @_;
+	my $raw = 0;
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"r|raw" => \$raw);
+
+	ldap_dumpsearch(base => host_to_dn($_),
+			scope => "base",
+			filter => q(objectClass=*),
+			-raw => $raw) for @_;
+
 	return 0;
 };
 
@@ -798,7 +795,7 @@ $commands{"server:admin"} = sub {
 		# update admins
 		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
-			my $dn = server_dn($host);
+			my $dn = host_to_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
 				attrs => ["admin", "owner"]);
@@ -807,8 +804,7 @@ $commands{"server:admin"} = sub {
 			my ($owner, @admins, %changes);
 			for my $entry ($res->entries) {
 				$owner = user_from_dn($entry->get_value("owner"));
-				@admins = map {user_from_dn $_}
-					$entry->get_value("admin");
+				@admins = map {user_from_dn($_)} $entry->get_value("admin");
 			}
 
 			if ($owner ~~ @del and !($owner ~~ @admins)) {
@@ -824,13 +820,13 @@ $commands{"server:admin"} = sub {
 
 			if (@add_host) {
 				$changes{add} = {
-					admin => [map {user_dn $_} @add_host],
+					admin => [map {user_to_dn $_} @add_host],
 				};
 				print "$host: Adding ".join(", ", @add_host)."\n";
 			}
 			if (@del_host) {
 				$changes{delete} = {
-					admin => [map {user_dn $_} @del_host],
+					admin => [map {user_to_dn $_} @del_host],
 				};
 				print "$host: Removing ".join(", ", @del_host)."\n";
 			}
@@ -844,9 +840,9 @@ $commands{"server:admin"} = sub {
 		}
 	} else {
 		# list admins
-		$ldap = ldap_connect_anon;
+		$ldap = ldap_connect_any;
 		for my $host (@hosts) {
-			my $dn = server_dn($host);
+			my $dn = host_to_dn($host);
 			my $res = $ldap->search(base => $dn, scope => "base",
 				filter => q(objectClass=server),
 				attrs => ["admin", "owner"]);
@@ -856,8 +852,8 @@ $commands{"server:admin"} = sub {
 				my $owner = $entry->get_value("owner");
 				my @admins = $entry->get_value("admin");
 
-				$owner = user_from_dn $owner;
-				@admins = sort map {user_from_dn $_} @admins;
+				$owner = user_from_dn($owner);
+				@admins = sort map {user_from_dn($_)} @admins;
 
 				if ($show_princ) {
 					$owner =~ s/$/\@CLUENET.ORG/;
@@ -889,21 +885,22 @@ $commands{"server:create"} = sub {
 	usage("server:create <hostname>") unless $host;
 
 	$ldap = ldap_connect_auth;
-	$owner //= whoami;
+	$owner //= ldap_whoami;
 	@address || push @address, "0.0.0.0";
 
-	my $fqdn = make_server_fqdn($host);
+	my $fqdn = host_to_fqdn($host);
 	print "Creating server: $fqdn (owned by $owner)\n";
 
-	# add main server entry
-	my $dn = server_dn($host);
+	# Add main server entry
+
+	my $dn = host_to_dn($host);
 	%entry = (
 		objectClass => ["server",
 			"ipHost",
 			"authorizedServiceObject",
 			"serviceRequirementObject"],
 		cn => $fqdn,
-		owner => user_dn($owner),
+		owner => user_to_dn($owner),
 		isActive => "TRUE",
 		isOfficial => "FALSE",
 		userAccessible => "TRUE",
@@ -914,7 +911,8 @@ $commands{"server:create"} = sub {
 	$res = $ldap->add($dn, attr => [%entry]);
 	if ($res->is_error) { die ldap_errmsg($res, $dn); }
 
-	# add svcAccess subtree
+	# Add svcAccess subtree
+
 	my $subdn = "cn=svcAccess,$dn";
 	%entry = (
 		objectClass => ["groupOfGroups"],
@@ -930,7 +928,7 @@ $commands{"server:create"} = sub {
 		%entry = (
 			objectClass => ["groupOfNames"],
 			cn => $_,
-			member => user_dn($owner),
+			member => user_to_dn($owner),
 		);
 		print "+ $subdn\n";
 		$res = $ldap->add($subdn, attr => [%entry]);
@@ -948,10 +946,10 @@ $commands{"server:delete"} = sub {
 	$ldap = ldap_connect_auth;
 
 	for my $host (@_) {
-		my $fqdn = make_server_fqdn($host);
+		my $fqdn = host_to_fqdn($host);
 		print "Deleting server: $fqdn\n";
 
-		my $dn = server_dn($fqdn);
+		my $dn = host_to_dn($fqdn);
 		$res = $ldap->search(base => $dn, scope => "sub",
 			filter => q(objectClass=*), attributes => ["dn"]);
 		$res->is_error and die ldap_errmsg($res, $dn);
@@ -971,7 +969,7 @@ $commands{"user"} = sub {
 	my (@users, @changes);
 
 	for (@_) {
-		when (/=/) {
+		when (/=/ or /^-/) {
 			push @changes, $_;
 		}
 		default {
@@ -983,8 +981,10 @@ $commands{"user"} = sub {
 		$ldap = ldap_connect_anon;
 
 		my $base = "ou=people,dc=cluenet,dc=org";
-		my $res = $ldap->search(base => $base, scope => "one",
-			filter => q(objectClass=posixAccount), attrs => ["uid"]);
+		my $res = $ldap->search(base => $base,
+					scope => "one",
+					filter => q(objectClass=posixAccount),
+					attrs => ["uid"]);
 		ldap_check($res, $base);
 
 		my @users = sort map {($_->get_value("uid"))[0]} $res->entries;
@@ -992,11 +992,12 @@ $commands{"user"} = sub {
 	}
 	elsif (@changes) {
 		my $changes = parse_changelist(\@changes);
-		modify_objects($changes, map {user_dn($_)} @users);
+		return ERR_SYNTAX if !$changes;
+		modify_objects($changes, map {user_to_dn($_)} @users);
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_auth;
+		$ldap = ldap_connect_any;
 		for my $user (@users) {
 			print_user_info(get_user_info($user));
 		}
@@ -1006,74 +1007,58 @@ $commands{"user"} = sub {
 };
 
 $commands{"user:dump"} = sub {
-	ext_dump_ldif(base => user_dn($_), scope => "sub") for @_;
+	my $raw = 0;
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"r|raw" => \$raw);
+
+	ldap_dumpsearch(base => user_to_dn($_),
+			scope => "base",
+			filter => q(objectClass=*),
+			-raw => $raw) for @_;
+
 	return 0;
 };
 
 $commands{"user:chsh"} = sub {
 	my $shell = shift;
 
-	if ($shell && $shell eq '-s') {
+	if ($shell && $shell eq "-s") {
 		$shell = shift;
 	}
 
 	if (defined $shell) {
 		if (!$shell) {
-			die "error: shell not specified\n";
+			die "Error: shell not specified\n";
 		} elsif ($shell !~ m!^/.+!) {
-			die "error: shell must be an absolute filesystem path\n";
+			die "Error: shell must be an absolute filesystem path\n";
 		} elsif ($shell !~ m!^/bin/(ba)?sh$!) {
-			warn "warning: shell might not be available on other servers\n";
+			warn "Warning: $shell might not be available on other servers\n";
 		}
 
 		$ldap = ldap_connect_auth;
-		my $dn = user_dn(whoami);
+		my $dn = user_to_dn(ldap_whoami);
 		my %entry = (loginShell => $shell);
 
-		print "Changing shell for ".whoami." to $shell\n";
+		say "Changing shell for ".ldap_whoami." to $shell";
 		my $res = $ldap->modify($dn, replace => \%entry);
-		$res->is_error and die ldap_errmsg($res, $dn);
+		ldap_check($res, $dn, die => 1);
 	}
 	else {
 		$ldap = ldap_connect_auth;
-		my $dn = user_dn(whoami);
-
-		my $res = $ldap->search(base => $dn, scope => "base",
-			filter => q(objectClass=posixAccount));
-		$res->is_error and die ldap_errmsg($res, $dn);
+		my $dn = user_to_dn(ldap_whoami);
+		my $res = $ldap->search(base => $dn,
+					scope => "base",
+					filter => q(objectClass=posixAccount));
+		ldap_check($res, $dn, die => 1);
 
 		for my $entry ($res->entries) {
 			$shell = $entry->get_value("loginShell");
 		}
 		$shell //= "not set.";
-		print "Your current shell is $shell\n";
+
+		say "Your current shell is $shell";
 	}
-};
-
-$commands{"help"} = sub {
-	# suck it, iso8859
-	print qq¶Usage: cluenet <command>
-
-ACCESS LISTS
-	show	access <host/service>...
-	grant	access <host/service>... [+-]<user>...
-	list	acl <host>...
-	create	acl <host>... [+-]<user>...
-
-USER ACCOUNTS
-	view	user <user>...
-	modify	user <user>... <attr>{=,+=,-=}<value>...
-	shell	user:chsh <shell>
-
-SERVERS
-	show	server [<host>...]
-	modify  server <host>... <attr>{=,+=,-=}<value>...
-	admins	server:admin <host>... [[+-]<user>...]
-	add	server:create <host> [--owner <owner>]
-
-MISCELLANEOUS
-	whoami
-¶;
 
 	return 0;
 };
@@ -1084,9 +1069,10 @@ $commands{"whoami"} = sub {
 	Getopt::Long::GetOptionsFromArray(\@_,
 		"v|verbose" => \$verbose);
 
+	my ($dn, $uid, $kuid, $princ);
+
 	$ldap = ldap_connect_auth;
 	my $resp = $ldap->who_am_i->response;
-	my ($dn, $uid, $kuid, $princ);
 
 	given ($resp) {
 		when (/^dn:(uid=(.+),ou=people,dc=cluenet,dc=org)$/) {
@@ -1098,11 +1084,11 @@ $commands{"whoami"} = sub {
 			$kuid = $2.'@nullroute.eu.org';
 		}
 		when (/^u:(.+)$/) {
-			$dn = user_dn($1);
+			$dn = user_to_dn($1);
 			$kuid = $1;
 		}
 		default {
-			say "unknown response $resp";
+			die "Error: Unknown response $resp from LDAP WhoAmI";
 		}
 	}
 
@@ -1136,6 +1122,34 @@ $commands{"whoami"} = sub {
 	} else {
 		say "dn: $dn";
 	}
+
+	return 0;
+};
+
+$commands{"help"} = sub {
+	# suck it, iso8859
+	print qq¶Usage: cluenet <command>
+
+ACCESS LISTS
+    show:       access <host/service>...
+    grant:      access <host/service>... [+-]<user>...
+    list:       acl <host>...
+    create:     acl <host>... [+-]<service>...
+
+USER ACCOUNTS
+    view:       user <user>...
+    modify:     user <user>... <attr>{=,+=,-=}<value>...
+    shell:      user:chsh <shell>
+
+SERVERS
+    show:       server [<host>...]
+    modify:     server <host>... <attr>{=,+=,-=}<value>...
+    admins:     server:admin <host>... [[+-]<user>...]
+    create:     server:create <host> [--owner <owner>]
+
+MISCELLANEOUS
+    whoami
+¶;
 
 	return 0;
 };
