@@ -1,5 +1,6 @@
 package Cluenet::LDAP;
 use warnings;
+no warnings qw(experimental);
 use strict;
 use feature qw(state switch);
 use base "Exporter";
