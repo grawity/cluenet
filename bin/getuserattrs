@@ -1,8 +1,6 @@
 #!/usr/bin/env perl
-BEGIN {
-	push @INC, "/cluenet/lib/perl5",
-		($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5";
-}
+use lib "/cluenet/lib/perl5";
+use lib ($ENV{CLUENET} // $ENV{HOME}."/cluenet")."/lib/perl5";
 use feature qw(say);
 use Cluenet::LDAP;
 use English;
