@@ -213,7 +213,7 @@ my $_rows = 0;
 sub row {
 	my ($label, $value) = @_;
 	if (ref $value eq 'ARRAY') {
-		row($label, $_) for @$value;
+		row($label, $_) for sort @$value;
 		return;
 	}
 	if (!defined $value) {
