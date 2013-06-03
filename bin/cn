@@ -313,11 +313,13 @@ sub get_server_info {
 
 sub get_user_name {
 	my ($user) = @_;
-	my $i = get_user_info($user);
-	return format_name($i) if $i;
 	my $uid = user_from_dn($user);
 	if ($uid =~ /@/) {
 		return "\"$uid\" [foreign]";
+	}
+	my $i = get_user_info($user);
+	if ($i) {
+		return format_name($i);
 	} else {
 		return "\"$uid\" [missing]";
 	}
