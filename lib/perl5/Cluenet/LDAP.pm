@@ -1,8 +1,7 @@
 package Cluenet::LDAP;
 use warnings;
-no warnings qw(experimental);
 use strict;
-use feature qw(state switch);
+use feature qw(state);
 use base "Exporter";
 
 use Authen::SASL;
@@ -169,16 +168,16 @@ sub parse_changelist {
 			($attr, $value) = $opts{translate}->($attr, $value);
 		}
 
-		given ($op) {
-			when ("=") {
+		for ($op) {
+			if ($_ eq "=") {
 				push @{$changes{replace}{$attr}}, $value;
 				$attrs{$attr}{replace}++;
 			}
-			when ("+=") {
+			elsif ($_ eq "+=") {
 				push @{$changes{add}{$attr}}, $value;
 				$attrs{$attr}{add}++;
 			}
-			when ("-=") {
+			elsif ($_ eq "-=") {
 				if (defined $value) {
 					push @{$changes{delete}{$attr}}, $value;
 					$attrs{$attr}{delete}++;
@@ -187,7 +186,7 @@ sub parse_changelist {
 					$attrs{$attr}{delattr}++;
 				}
 			}
-			default {
+			else {
 				warn "Error: Unsupported operation: '$op' for '$attr'\n";
 				return undef;
 			}
