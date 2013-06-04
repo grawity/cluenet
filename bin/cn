@@ -1000,9 +1000,8 @@ $commands{"user"} = sub {
 	}
 	else {
 		$ldap = ldap_connect_any;
-		for my $user (@users) {
-			print_user_info(get_user_info($user));
-		}
+		print_user_info(get_user_info($_))
+			for map {user_to_dn($_)} @users;
 	}
 
 	return 0;
