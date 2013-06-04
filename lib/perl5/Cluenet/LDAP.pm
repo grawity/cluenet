@@ -1,5 +1,7 @@
 package Cluenet::LDAP;
 use warnings;
+no if $] >= 5.018,
+	warnings => qw(experimental::smartmatch);
 use strict;
 use feature qw(state);
 use base "Exporter";
