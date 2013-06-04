@@ -7,7 +7,6 @@ use Carp;
 use IO::Handle;
 use Socket::GetAddrInfo qw(:constants getaddrinfo getnameinfo);
 use Sys::Hostname;
-use User::pwent;
 
 =head1 Cluenet::Common
 
@@ -65,9 +64,11 @@ sub dns_match_zone {
 
 Qualifies the given DNS $name, which may be "@".
 
-If $relative > 0, the final dot will not be added (and will be removed if present).
+If $relative >= 1, the final dot will not be added (and will be removed if
+present).
 
-If $relative > 1, names containing at least that many components will be considered qualified.
+If $relative >= 2, names containing at least that many components will be
+considered qualified.
 
 Names ending with a . are always considered qualified.
 
@@ -81,8 +82,7 @@ sub dns_qualify {
 		return $zone	if $domain eq '@';
 		return $domain	if $domain =~ s/\.$//;
 		my $ndots = $domain =~ tr/.//;
-		return $domain	if $relative > 1
-			and $relative <= $ndots+1;
+		return $domain	if $relative > 1 && $relative <= $ndots+1;
 		return $domain	if $zone eq '';
 		return $domain.".".$zone;
 	} else {
@@ -97,7 +97,7 @@ sub dns_qualify {
 
 =head2 dns_canonical($name) -> $fqdn
 
-Returns the "canonical name" of a given hostname, according to [reverse] DNS.
+Returns the "canonical name" of a given hostname, according to reverse DNS.
 
 =cut
 
@@ -107,7 +107,7 @@ sub dns_canonical {
 	my ($err, @ai) = getaddrinfo($name, 0);
 	for my $ai (@ai) {
 		my ($err, $host) = getnameinfo($ai->{addr}, NI_NAMEREQD);
-		return $host if !length($err);
+		return $host unless length($err);
 	}
 	warn "Could not resolve rDNS for $name, fallback to cname\n";
 	return $ai[0]->{canonname};
@@ -128,8 +128,8 @@ sub dns_fqdn {
 
 =head2 host_to_fqdn($name) -> $fqdn
 
-Converts a Cluenet hostname into a FQDN, appending ".cluenet.org" if necessary,
-ignoring reverse DNS.
+Converts a Cluenet hostname into a FQDN by appending ".cluenet.org" if
+necessary (ignoring reverse DNS).
 
     equal -> equal.cluenet.org
 
@@ -150,7 +150,8 @@ Read a single line from a file.
 =cut
 
 sub file_read_line {
-	my ($file) = @_;
+	my $file = shift;
+
 	if (open my $fh, "<", $file) {
 		chomp(my $line = $fh->getline);
 		$fh->close;
