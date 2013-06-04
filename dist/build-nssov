@@ -2,8 +2,6 @@
 
 set -e
 
-version=${1:-'2.4.30'}
-
 buildroot="$PWD/openldap-nssov-build"
 
 download() {
@@ -35,6 +33,13 @@ getbuild() {
 	destdir="$buildroot/nssov"
 	package
 }
+
+version=$1
+
+if [[ ! $version ]]; then
+	echo "Usage: $0 <slapd-version>" >&2
+	exit 1
+fi
 
 if (( UID )); then
 	getbuild

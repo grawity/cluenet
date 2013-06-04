@@ -1,12 +1,11 @@
 #!/usr/bin/env perl
-BEGIN {
-	push @INC, "/cluenet/lib/perl5",
-		($ENV{CLUENET} // "$ENV{HOME}/cluenet")."/lib/perl5";
-}
 use feature qw(say);
-use Cluenet::LDAP;
-use English;
+use lib "/cluenet/lib/perl5";
+use lib ($ENV{CLUENET} // $ENV{HOME}."/cluenet")."/lib/perl5";
 use Getopt::Long qw(:config no_ignore_case);
+
+$Cluenet::LDAP_HOST = "ldap://:3890";
+my $cachedir = "/var/cache/cluenet/user-info";
 
 my $users = getlogin;
 my $short = 0;
@@ -18,19 +17,12 @@ GetOptions(
 
 my @users = split(/,/, $users);
 my @attrs = @ARGV;
-
 my $err = 0;
-
-my $cachedir = "/var/cache/cluenet/user-info";
-
-sub getattrs {
-	my ($uid, $attrs) = @_;
-}
 
 for my $uid (@users) {
 	my @items;
 	my $cachefile = "$cachedir/$uid";
-	if (-r $cachefile && -M $cachefile < 1) {
+	if (-r $cachefile && -M $cachefile <= 2) {
 		open(my $fh, "<", $cachefile);
 		while (<$fh>) {
 			chomp;
@@ -41,17 +33,20 @@ for my $uid (@users) {
 		}
 		close($fh);
 	} else {
-		my $dn = user_dn($uid);
-		my $ldap = Cluenet::LDAP::ldap_connect_anon;
+		require Cluenet::LDAP;
+		my $dn = Cluenet::LDAP::user_to_dn($uid);
+		my $ldap = Cluenet::LDAP::ldap_connect_anon();
 		my $res = $ldap->search(
 			base => $dn,
 			scope => "base",
 			filter => q(objectClass=posixAccount));
 		if ($res->is_error) {
-			$err++;
-			next;
+			$err++; next;
 		}
 		for my $entry ($res->entries) {
+			for my $attr (@attrs) {
+				push @items, [$attr, $_] for $entry->get_value($attr);
+			}
 			if (-d $cachedir) {
 				open(my $fh, ">", $cachefile);
 				for my $attr ($entry->attributes) {
@@ -59,9 +54,6 @@ for my $uid (@users) {
 						for $entry->get_value($attr);
 				}
 				close($fh);
-			}
-			for my $attr (@attrs) {
-				push @items, [$attr, $_] for $entry->get_value($attr);
 			}
 		}
 	}
@@ -73,4 +65,4 @@ for my $uid (@users) {
 	}
 }
 
-exit $err ? 1 : 0;
+exit !!$err;

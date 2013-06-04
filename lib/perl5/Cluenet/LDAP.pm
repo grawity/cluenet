@@ -9,7 +9,6 @@ use Authen::SASL;
 use Carp;
 use Cluenet;
 use Cluenet::Common;
-use Data::Dumper;
 use Net::LDAP;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util	qw(ldap_explode_dn);
@@ -217,7 +216,7 @@ Establish an LDAP connection (GSSAPI-authenticated or anonymous).
 =cut
 
 sub __ldap_connect_auth {
-	my $ldaph = Net::LDAP->new(Cluenet::LDAP_HOST) or croak "$!";
+	my $ldaph = Net::LDAP->new($Cluenet::LDAP_HOST) or croak "$!";
 
 	my $peername = $ldaph->{net_ldap_socket}->peername;
 	my ($err, $host) = getnameinfo($peername);
@@ -238,7 +237,7 @@ sub __ldap_connect_auth {
 }
 
 sub __ldap_connect_anon {
-	my $ldaph = Net::LDAP->new(Cluenet::LDAP_HOST) or croak "$!";
+	my $ldaph = Net::LDAP->new($Cluenet::LDAP_HOST) or croak "$!";
 
 	my $msg = $ldaph->bind();
 	if ($msg->code) {
