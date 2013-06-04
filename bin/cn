@@ -42,16 +42,15 @@ $ENV{LDAPBASE} = "dc=cluenet,dc=org";
 ### Status display
 
 sub status {
-	if ($status) {
-		print STDERR "\r\033[K",
-			"\033[38;5;10m", shift, "\033[m";
-		$|++;
-	}
-}
+	my $msg = shift;
 
-sub done {
 	if ($status) {
-		print STDERR "\r\033[K";
+		if (defined $msg) {
+			print STDERR "\r\033[K",
+				"\033[38;5;10m", $msg, "\033[m";
+		} else {
+			print STDERR "\r\033[K";
+		}
 		$|++;
 	}
 }
@@ -122,11 +121,12 @@ exit if $args{die} was set. Silently skip error names in %$args{ignore}.
 
 sub ldap_check {
 	my ($res, $dn, %args) = @_;
+
 	if ($res->is_error) {
 		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
 			return 1;
 		} else {
-			done;
+			status undef;
 			my $msg = Cluenet::LDAP::ldap_format_error($res, $dn);
 			print STDERR "\e[33m${msg}\e[m";
 
@@ -206,15 +206,19 @@ sub str_bool {
 		die "Invalid value '$_'\n";
 	}
 }
-sub ldap_bool { str_bool(shift) ? "TRUE" : "FALSE" }
+
+sub ldap_bool {
+	return str_bool(shift) ? "TRUE" : "FALSE";
+}
 
 # Output fields
 
 my $_rows = 0;
-sub row {
+
+sub put_row {
 	my ($label, $value) = @_;
 	if (ref $value eq 'ARRAY') {
-		row($label, $_) for sort @$value;
+		put_row($label, $_) for sort @$value;
 		return;
 	}
 	if (!defined $value) {
@@ -239,18 +243,20 @@ sub row {
 		++$_rows;
 	}
 }
-sub row_r { printf "%-16s%s\n", @_; ++$_rows; }
-sub endsection { if ($_rows) {print "\n"; $_rows = 0;} }
+
+sub put_end_section {
+	if ($_rows) { print "\n"; $_rows = 0; }
+}
 
 ### LDAP connection
 
 sub krb5_have_tgt {
-	system("klist", "-s", "-5") == 0;
+	return system("klist", "-s", "-5") == 0;
 }
 
 sub krb5_ensure_tgt {
 	if (!krb5_have_tgt()) {
-		done;
+		status undef;
 		if (defined $ENV{CN_NUSH}) {
 			die "\e[1;31merror:\e[m not logged in\n";
 		} else {
@@ -263,14 +269,14 @@ sub ldap_connect_auth {
 	krb5_ensure_tgt();
 	status "Connecting to LDAP server...";
 	my $r = Cluenet::LDAP::ldap_connect_auth;
-	done;
+	status undef;
 	return $r;
 }
 
 sub ldap_connect_anon {
 	status "Connecting to LDAP server...";
 	my $r = Cluenet::LDAP::ldap_connect_anon;
-	done;
+	status undef;
 	return $r;
 }
 
@@ -305,17 +311,19 @@ sub get_server_info {
 			$cache{$dn} = \%server;
 			last;
 		}
-		done;
+		status undef;
 	}
 	return $cache{$dn};
 }
 
-sub get_user_name {
+sub get_user_realname {
 	my ($user) = @_;
+
 	my $uid = user_from_dn($user);
 	if ($uid =~ /@/) {
 		return "\"$uid\" [foreign]";
 	}
+
 	my $i = get_user_info($user);
 	if ($i) {
 		return format_name($i);
@@ -330,7 +338,7 @@ sub print_server_info {
 	my $server = get_server_info($host);
 	my $owner = get_user_info($server->{owner});
 
-	my @admins = sort map {get_user_name($_)}
+	my @admins = sort map {get_user_realname($_)}
 			grep {!m|/|} @{$server->{admin}};
 
 	my $port = $server->{sshPort} // 22;
@@ -342,26 +350,28 @@ sub print_server_info {
 				(grep {/:/} @{$server->{address}}) ? "IPv6" : undef,
 			);
 
-	row "HOSTNAME:"		=> uc $server->{cn};
-	row "created:"		=> format_date($server->{createTimestamp});
-	row "address:"		=> format_address($_, $port)
+	put_row "HOSTNAME:"		=> uc $server->{cn};
+	put_row "created:"		=> format_date($server->{createTimestamp});
+	put_row "address:"		=> format_address($_, $port)
 					for @{$server->{address}};
-	row "owner:"		=> format_name($owner);
-	row "admin:"		=> \@admins;
-	row "status:"		=> join(", ", @status);
+	put_row "owner:"		=> format_name($owner);
+	put_row "admin:"		=> \@admins;
+	put_row "status:"		=> join(", ", @status);
 	if (defined $server->{authorizedService}) {
 		my @services = sort @{$server->{authorizedService}};
-		row "services:"	=> join(", ", @services);
+		put_row "services:"	=> join(", ", @services);
 	}
-	endsection;
+	put_end_section;
 
 	my $fmt = Text::Format->new(leftMargin => 4, firstIndent => 0);
 
 	if ($server->{description}) {
+		print "description:\n";
 		print $fmt->format(@{$server->{description}}), "\n";
 	}
 
 	if ($server->{serverRules}) {
+		print "rules:\n";
 		if ($server->{serverRules}[0] ne 'default') {
 			print $fmt->format(@{$server->{serverRules}}), "\n";
 		}
@@ -388,28 +398,28 @@ sub get_user_info {
 			$cache{$dn} = \%user;
 			last;
 		}
-		done;
+		status undef;
 	}
 	return $cache{$dn};
 }
 
 sub print_user_info {
 	my ($user) = @_;
-	row "PERSON:"		=> format_name($user);
-	row "created:"		=> format_date($user->{createTimestamp});
-	row "uid:"		=> $user->{uidNumber};
-	row "shell:"		=> $user->{loginShell} // "(unset)";
-	row "IRC account:"	=> $user->{ircServicesUser}
+	put_row "PERSON:"		=> format_name($user);
+	put_row "created:"		=> format_date($user->{createTimestamp});
+	put_row "uid:"			=> $user->{uidNumber};
+	put_row "shell:"		=> $user->{loginShell} // "(unset)";
+	put_row "IRC account:"		=> $user->{ircServicesUser}
 					if $user->{ircServicesUser};
-	row "email:"		=> join(", ", @{$user->{mail}})
+	put_row "email:"		=> join(", ", @{$user->{mail}})
 					if $user->{mail};
-	row "URL:"		=> $user->{labeledURI}
+	put_row "URL:"			=> $user->{labeledURI}
 					if $user->{labeledURI};
-	row "allowed services:"	=> join(", ", sort @{$user->{authorizedService}})
+	put_row "allowed services:"	=> join(", ", sort @{$user->{authorizedService}})
 					if $user->{authorizedService};
-	row "allowed hosts:"	=> join(",  ", sort @{$user->{host}})
+	put_row "allowed hosts:"	=> join(",  ", sort @{$user->{host}})
 					if $user->{host};
-	endsection;
+	put_end_section;
 }
 
 
@@ -533,7 +543,7 @@ $commands{"access"} = sub {
 				ldap_check($res, $base) or next;
 				push @results, $res->entries;
 			}
-			done;
+			status undef;
 		} else {
 			my $base = "ou=servers,dc=cluenet,dc=org";
 			status "Searching in all server ACLs...";
@@ -543,7 +553,7 @@ $commands{"access"} = sub {
 						attrs => ["cn", "member"]);
 			ldap_check($res, $base) or next;
 			push @results, $res->entries;
-			done;
+			status undef;
 		}
 
 		my @output;
@@ -725,25 +735,20 @@ $commands{"server"} = sub {
 		my $changes = parse_changelist(\@changes,
 			translate => sub {
 				my ($attr, $value) = @_;
-				given ($attr) {
-					when ("active") {
-						$attr = "isActive";
-						$value = ldap_bool($value);
-					}
-					when ("official") {
-						$attr = "isOfficial";
-						$value = ldap_bool($value);
-					}
-					when ("public") {
-						$attr = "userAccessible";
-						$value = ldap_bool($value);
-					}
-					when ("admin") {
-						$value = user_to_dn_maybe($value);
-					}
-					when ("owner") {
-						$value = user_to_dn_maybe($value);
-					}
+				if ($attr eq "active") {
+					$attr = "isActive";
+					$value = ldap_bool($value);
+				}
+				elsif ($attr eq "official") {
+					$attr = "isOfficial";
+					$value = ldap_bool($value);
+				}
+				elsif ($attr eq "public") {
+					$attr = "userAccessible";
+					$value = ldap_bool($value);
+				}
+				elsif ($attr eq "admin" || $attr eq "owner") {
+					$value = user_to_dn_maybe($value);
 				}
 				return ($attr, $value);
 			});
