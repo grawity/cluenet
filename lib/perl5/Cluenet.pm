@@ -4,15 +4,14 @@ use strict;
 
 =head1 Cluenet
 
-Constants aren't exported – they're to be used via Cluenet::FOO
+Constants and variables aren't exported – they're to be used as Cluenet::FOO
+and $Cluenet::FOO.
 
 =cut
 
-use constant {
-	LDAP_HOST		=> "ldap://ldap.cluenet.org",
-	KADM_HOST		=> "virgule.cluenet.org",
-	API_PRINC		=> undef,
-	API_KEYTAB		=> undef,
-};
+our $LDAP_HOST = "ldap://ldap.cluenet.org";
+our $KADM_HOST = "krb5-admin.cluenet.org";
+our $API_PRINC = undef;
+our $API_KEYTAB = undef;
 
 1;
