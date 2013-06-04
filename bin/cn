@@ -284,11 +284,10 @@ sub get_server_info {
 	my $dn = host_to_dn($host);
 	if (!exists $cache{$dn}) {
 		status "Looking up server: ".host_from_dn($dn);
-		my $res = $ldap->search(
-				base => $dn,
-				scope => "base",
-				filter => q(objectClass=server),
-				attrs => ["*", "+"]);
+		my $res = $ldap->search(base => $dn,
+					scope => "base",
+					filter => q(objectClass=server),
+					attrs => ["*", "+"]);
 		ldap_check($res, $dn)
 			or return $cache{$dn} = undef;
 		for my $entry ($res->entries) {
@@ -374,11 +373,10 @@ sub get_user_info {
 	my ($dn) = @_;
 	if (!exists $cache{$dn}) {
 		status "Looking up user: ".user_from_dn($dn);
-		my $res = $ldap->search(
-			base => $dn,
-			scope => "base",
-			filter => q(objectClass=posixAccount),
-			attrs => ["*", "+"]);
+		my $res = $ldap->search(base => $dn,
+					scope => "base",
+					filter => q(objectClass=posixAccount),
+					attrs => ["*", "+"]);
 		ldap_check($res, $dn)
 			or return $cache{$dn} = undef;
 		for my $entry ($res->entries) {
@@ -515,7 +513,6 @@ $commands{"access"} = sub {
 	}
 	elsif (@users) {
 		$ldap = ldap_connect_anon;
-
 		my @filters = map {"(member=$_)"} map {user_to_dn($_)} @users;
 		my $filter = "(&(objectClass=groupOfNames)(|".join("", @filters)."))";
 		my @results;
@@ -602,11 +599,10 @@ $commands{"acl"} = sub {
 			my ($res, $dn, %entry);
 
 			$dn = "cn=svcAccess,".host_to_dn($host);
-			$res = $ldap->search(
-					base => $dn,
-					scope => "base",
-					filter => q(objectClass=*),
-					attrs => []);
+			$res = $ldap->search(base => $dn,
+					     scope => "base",
+					     filter => q(objectClass=*),
+					     attrs => []);
 			if (!$res->count) {
 				print "Creating ACL subtree for $host\n";
 				%entry = (
@@ -660,22 +656,20 @@ $commands{"acl"} = sub {
 			my ($dn, $res);
 
 			$dn = host_to_dn($host);
-			$res = $ldap->search(
-					base => $dn,
-					scope => "base",
-					filter => q(objectClass=*),
-					attrs => ["authorizedService"]);
+			$res = $ldap->search(base => $dn,
+					     scope => "base",
+					     filter => q(objectClass=*),
+					     attrs => ["authorizedService"]);
 			ldap_check($res, $dn);
 
 			my @svcs_authz = map {$_->get_value("authorizedService")} $res->entries;
 			my %svcs_authz = map {$_ => 1} @svcs_authz;
 
 			$dn = "cn=svcAccess,".host_to_dn($host);
-			$res = $ldap->search(
-					base => $dn,
-					scope => "one",
-					filter => q(objectClass=groupOfNames),
-					attrs => ["cn"]);
+			$res = $ldap->search(base => $dn,
+					     scope => "one",
+					     filter => q(objectClass=groupOfNames),
+					     attrs => ["cn"]);
 			ldap_check($res, $dn);
 
 			my @svcs_acl = map {$_->get_value("cn")} $res->entries;
@@ -715,8 +709,10 @@ $commands{"server"} = sub {
 		$ldap = ldap_connect_anon;
 
 		my $base = "ou=servers,dc=cluenet,dc=org";
-		my $res = $ldap->search(base => $base, scope => "one",
-			filter => q(objectClass=server), attrs => ["cn"]);
+		my $res = $ldap->search(base => $base,
+					scope => "one",
+					filter => q(objectClass=server),
+					attrs => ["cn"]);
 		ldap_check($res, $base);
 
 		my @hosts = sort grep {s/\.cluenet\.org$//i}
@@ -743,10 +739,10 @@ $commands{"server"} = sub {
 						$value = ldap_bool($value);
 					}
 					when ("admin") {
-						$value = user_to_dn($value);
+						$value = user_to_dn_maybe($value);
 					}
 					when ("owner") {
-						$value = user_to_dn($value);
+						$value = user_to_dn_maybe($value);
 					}
 				}
 				return ($attr, $value);
@@ -757,9 +753,7 @@ $commands{"server"} = sub {
 	}
 	else {
 		$ldap = ldap_connect_any;
-		for my $host (@hosts) {
-			print_server_info($host);
-		}
+		print_server_info($_) for @hosts;
 	}
 };
 
@@ -791,16 +785,17 @@ $commands{"server:admin"} = sub {
 		default			{ push @hosts, $_ }
 	}
 
-	usage("server:admin <host>... [+-]<user>...") unless @hosts;
+	usage("server:admin <host>... [+-]<user>...") if !@hosts;
 
 	if (@add or @del) {
 		# update admins
 		$ldap = ldap_connect_auth;
 		for my $host (@hosts) {
 			my $dn = host_to_dn($host);
-			my $res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=server),
-				attrs => ["admin", "owner"]);
+			my $res = $ldap->search(base => $dn,
+						scope => "base",
+						filter => q(objectClass=server),
+						attrs => ["admin", "owner"]);
 			ldap_check($res, $dn) or next;
 
 			my ($owner, @admins, %changes);
@@ -845,9 +840,10 @@ $commands{"server:admin"} = sub {
 		$ldap = ldap_connect_any;
 		for my $host (@hosts) {
 			my $dn = host_to_dn($host);
-			my $res = $ldap->search(base => $dn, scope => "base",
-				filter => q(objectClass=server),
-				attrs => ["admin", "owner"]);
+			my $res = $ldap->search(base => $dn,
+						scope => "base",
+						filter => q(objectClass=server),
+						attrs => ["admin", "owner"]);
 			ldap_check($res, $dn) or next;
 
 			for my $entry ($res->entries) {
@@ -874,19 +870,19 @@ $commands{"server:admin"} = sub {
 };
 
 $commands{"server:create"} = sub {
+	my ($owner, @address);
 	my ($res, %entry);
-
-	my $host = shift;
-	my $owner;
-	my @address;
 
 	Getopt::Long::GetOptionsFromArray(\@_,
 		"o|owner=s" => \$owner,
 		"a|address=s" => \@address);
 
-	usage("server:create <hostname>") unless $host;
+	my $host = shift;
+
+	usage("server:create <hostname>") if !$host;
 
 	$ldap = ldap_connect_auth;
+
 	$owner //= ldap_whoami;
 	@address || push @address, "0.0.0.0";
 
@@ -898,9 +894,9 @@ $commands{"server:create"} = sub {
 	my $dn = host_to_dn($host);
 	%entry = (
 		objectClass => ["server",
-			"ipHost",
-			"authorizedServiceObject",
-			"serviceRequirementObject"],
+				"ipHost",
+				"authorizedServiceObject",
+				"serviceRequirementObject"],
 		cn => $fqdn,
 		owner => user_to_dn($owner),
 		isActive => "TRUE",
@@ -911,7 +907,7 @@ $commands{"server:create"} = sub {
 	);
 	print "+ $dn\n";
 	$res = $ldap->add($dn, attr => [%entry]);
-	if ($res->is_error) { die ldap_errmsg($res, $dn); }
+	ldap_check($res, $dn);
 
 	# Add svcAccess subtree
 
@@ -943,7 +939,7 @@ $commands{"server:create"} = sub {
 $commands{"server:delete"} = sub {
 	my ($res);
 
-	usage("server:delete <hostname>...") unless @_;
+	usage("server:delete <hostname>...") if !@_;
 
 	$ldap = ldap_connect_auth;
 
@@ -952,8 +948,10 @@ $commands{"server:delete"} = sub {
 		print "Deleting server: $fqdn\n";
 
 		my $dn = host_to_dn($fqdn);
-		$res = $ldap->search(base => $dn, scope => "sub",
-			filter => q(objectClass=*), attributes => ["dn"]);
+		$res = $ldap->search(base => $dn,
+				     scope => "sub",
+				     filter => q(objectClass=*),
+				     attributes => ["dn"]);
 		$res->is_error and die ldap_errmsg($res, $dn);
 
 		my @children = reverse map {$_->dn} $res->entries;
@@ -971,12 +969,8 @@ $commands{"user"} = sub {
 	my (@users, @changes);
 
 	for (@_) {
-		when (/=/ or /^-/) {
-			push @changes, $_;
-		}
-		default {
-			push @users, $_;
-		}
+		when (/=/ or /^-/) { push @changes, $_; }
+		default            { push @users, $_; }
 	}
 
 	if (!@users) {

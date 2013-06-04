@@ -43,6 +43,18 @@ sub user_to_dn {
 	return "uid=${user},ou=people,dc=cluenet,dc=org";
 }
 
+=head2 user_to_dn_maybe($user) -> $dn
+
+Convert a Cluenet username to LDAP DN, if it isn't already.
+
+=cut
+
+sub user_to_dn_maybe {
+	my $user = shift;
+
+	return $user =~ /^\w+=/ ? $user : user_to_dn($user);
+}
+
 =head2 host_to_dn($host) -> $dn
 
 Convert a Cluenet hostname to LDAP DN.
