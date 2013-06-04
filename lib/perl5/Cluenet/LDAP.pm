@@ -146,7 +146,7 @@ Arguments:
     attr=value
     attr+=value
     attr-=value
-    -=attr
+    -attr
 
 Options:
 
@@ -160,7 +160,7 @@ sub parse_changelist {
 	my %attrs;
 
 	for (@$args) {
-		/^(?<attr>\w+)(?<op>=|\+=|-=)(?<value>.*)$ | ^(?<op>-=)(?<attr>\w+)$/x
+		/^(?<attr>\w+)(?<op>=|\+=|-=)(?<value>.*)$ | ^(?<op>-)(?<attr>\w+)$/x
 			or do { warn "Error: Invalid operation: $_\n"; return undef; };
 		my ($attr, $op, $value) = ($+{attr}, $+{op}, $+{value});
 
@@ -178,13 +178,12 @@ sub parse_changelist {
 				$attrs{$attr}{add}++;
 			}
 			elsif ($_ eq "-=") {
-				if (defined $value) {
-					push @{$changes{delete}{$attr}}, $value;
-					$attrs{$attr}{delete}++;
-				} else {
-					$changes{delete}{$attr} = [];
-					$attrs{$attr}{delattr}++;
-				}
+				push @{$changes{delete}{$attr}}, $value;
+				$attrs{$attr}{delete}++;
+			}
+			elsif ($_ eq "-") {
+				$changes{delete}{$attr} = [];
+				$attrs{$attr}{delattr}++;
 			}
 			else {
 				warn "Error: Unsupported operation: '$op' for '$attr'\n";
