@@ -8,7 +8,7 @@ BEGIN {
 use utf8;
 use feature qw(say switch state);
 use warnings;
-no warnings qw(experimental);
+no if $] >= 5.017011, warnings => qw(experimental);
 use strict;
 
 use constant ERR_SYNTAX => 2;
