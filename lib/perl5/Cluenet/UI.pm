@@ -14,13 +14,27 @@ sub _print_status {
 	my ($msg) = @_;
 
 	if (_is_interactive) {
-		my @m = "\r\033[K";
+		my @m = "\r\e[K";
 		if (defined $msg) {
-			push @m, "\033[38;5;10m", $msg, "\033[m";
+			push @m, "\e[38;5;10m", $msg, "\e[m";
 		}
 		print STDERR @m;
 		$|++;
 	}
+}
+
+sub _print_warning {
+	my ($msg) = @_;
+
+	print STDERR "\e[1;33mwarning:\e[m $msg\n";
+	$|++;
+}
+
+sub _print_error {
+	my ($msg) = @_;
+
+	print STDERR "\e[1;31merror:\e[m $msg\n";
+	$|++;
 }
 
 sub cred_check {
@@ -42,5 +56,7 @@ sub cred_ensure {
 }
 
 $Cluenet::UI_CB{status} = \&_print_status;
+$Cluenet::UI_CB{warning} = \&_print_warning;
+$Cluenet::UI_CB{error} = \&_print_error;
 
 1;

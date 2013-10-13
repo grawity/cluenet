@@ -21,6 +21,7 @@ use Getopt::Long qw(:config posix_default no_ignore_case);
 use Net::DNS;
 use Net::IP;
 use Net::LDAP;
+use Net::LDAP::Constant;
 use Net::LDAP::Extension::WhoAmI;
 use Net::LDAP::Util qw(ldap_explode_dn);
 use POSIX;
@@ -64,6 +65,84 @@ sub ldap_dumpsearch {
 	} else {
 		$_->dump for $res->entries;
 	}
+}
+
+=head2 ldap_find_next_uid() -> $uid
+
+Determine the largest UID of accounts under ou=people, and return the next UID.
+
+=cut
+
+sub ldap_find_next_uid {
+	my $next_uid = 25000;
+
+	put_status("Searching for available UID...");
+	my $res = $ldap->search(base => "ou=people,dc=cluenet,dc=org",
+				filter => "objectClass=posixAccount",
+				attrs => ["uidNumber"]);
+	ldap_check($res, undef, die => 1);
+
+	for my $entry ($res->entries) {
+		my $uid = $entry->get_value("uidNumber");
+		if ($uid > $next_uid) {
+			$next_uid = $uid;
+		}
+	}
+	
+	++$next_uid;
+
+	while (1) {
+		put_status("Checking if UID $next_uid is free...");
+		$res = $ldap->search(base => "dc=cluenet,dc=org",
+				     filter => "(&(objectClass=posixAccount)(uidNumber=$next_uid))",
+				     attrs => ["1.1"]);
+		if ($res->is_error || $res->count == 0) {
+			last;
+		} else {
+			++$next_uid;
+		}
+	}
+
+	put_status();
+	return $next_uid;
+}
+
+=head2 ldap_dn_exists($dn) -> $exists
+
+Check if a LDAP entry with DN $dn exists.
+
+=cut
+
+sub ldap_dn_exists {
+	my ($dn) = @_;
+
+	my $dnparts = ldap_explode_dn($dn) // return 0;
+
+	while (my ($attr, $value) = each %{$dnparts->[0]}) {
+		my $res = $ldap->compare($dn, attr => $attr, value => $value);
+		if ($res->code == Net::LDAP::Constant::LDAP_NO_SUCH_OBJECT
+		|| $res->code == Net::LDAP::Constant::LDAP_COMPARE_FALSE) {
+			return 0;
+		} else {
+			ldap_check($res, $dn, die => 1);
+		}
+	}
+
+	return 1;
+}
+
+=head2 krb_principal_exists($principal) -> $exists;
+
+Check if a Kerberos principal $principal exists.
+
+=cut
+
+sub krb_principal_exists {
+	my ($principal) = @_;
+
+	my ($realm) = $principal =~ /@(.+)$/;
+
+	ldap_dn_exists("krbPrincipalName=$principal,cn=$realm,cn=kerberos,dc=cluenet,dc=org");
 }
 
 =head2 ldap_whoami() -> $username
@@ -994,6 +1073,88 @@ $commands{"user:dump"} = sub {
 			scope => "base",
 			filter => q(objectClass=*),
 			-raw => $raw) for @_;
+
+	return 0;
+};
+
+$commands{"user:create"} = sub {
+	my ($force, $uid);
+	my ($res, %entry);
+	my ($skip_krb, $skip_ldap);
+
+	Getopt::Long::GetOptionsFromArray(\@_,
+		"force!" => \$force,
+		"uid=i" => \$uid);
+
+	my $username = shift;
+
+	usage("user:create <username>") if !$username;
+
+	$ldap = ldap_connect_auth;
+
+	# Gather information
+
+	my $dn = user_to_dn($username);
+	my $principal = "$username\@CLUENET.ORG";
+
+	if (ldap_dn_exists($dn)) {
+		put_failure("Entry $dn already exists.", !$force)
+		|| return 1;
+		$skip_ldap = 1;
+	}
+
+	if ($uid) {
+		$res = $ldap->search(base => "dc=cluenet,dc=org",
+				     filter => "(&(objectClass=posixAccount)(uidNumber=$uid))",
+				     attrs => ["1.1"]);
+		ldap_check($res, undef, die => 1);
+		if ($res->count > 0) {
+			put_failure("User with UID $uid already exists.", !$force)
+			|| return 1;
+			$skip_ldap = 1;
+		}
+	}
+
+	if (krb_principal_exists($principal)) {
+		put_failure("Kerberos principal $principal already exists.", !$force)
+		|| return 1;
+		$skip_krb = 1;
+	}
+
+	# Add main user entry
+
+	my $next_uid = $uid // ldap_find_next_uid();
+
+	%entry = (
+		objectClass => ["person",
+				"inetOrgPerson",
+				"posixAccount",
+				"hostObject",
+				"authorizedServiceObject",
+				"cluenetUser",
+				"krbPrincipalAux",
+				"clueAuthorizedAbilityObject"],
+		uid => $username,
+		uidNumber => $next_uid,
+		gidNumber => 25000,
+		userPassword => "{SASL}$principal",
+		sn => $username,
+		givenName => $username,
+		cn => $username,
+		gecos => $username,
+		loginShell => "/bin/bash",
+		homeDirectory => "/home/$username",
+		krbPrincipalName => $principal,
+		authorizedService => ["wiki"],
+	);
+
+	print "+ $dn\n";
+	#$res = $ldap->add($dn, attr => [%entry]);
+	#ldap_check($res, $dn);
+
+	# Add Kerberos principal
+
+	put_error("Not implemented.");
 
 	return 0;
 };

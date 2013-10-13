@@ -25,6 +25,9 @@ our @EXPORT = qw(
 	file_read_line
 	gen_passwd
 	put_status
+	put_warning
+	put_error
+	put_failure
 );
 
 =head2 dns_match($domain, $subdomain) -> bool $matched
@@ -190,6 +193,59 @@ sub put_status {
 	if (ref $Cluenet::UI_CB{status} eq 'CODE') {
 		$Cluenet::UI_CB{status}->(@_);
 	}
+}
+
+=head2 put_warning($message), put_error($message)
+
+FIXME
+
+=cut
+
+sub put_warning {
+	put_status();
+	if (ref $Cluenet::UI_CB{warning} eq 'CODE') {
+		$Cluenet::UI_CB{warning}->(@_);
+	} else {
+		warn "warning: @_\n";
+	}
+}
+
+sub put_error {
+	put_status();
+	if (ref $Cluenet::UI_CB{error} eq 'CODE') {
+		$Cluenet::UI_CB{error}->(@_);
+	} else {
+		warn "error: @_\n";
+	}
+}
+
+=head2 put_failure($message, $fatal)
+
+Display either a warning or an error depending on $fatal. Can be used as:
+
+	put_failure("Foo", !$force) || return 1;
+
+Which is basically a shortcut for:
+
+	if ($fatal) {
+		put_error($msg);
+		return 1;
+	} else {
+		put_warning($msg);
+	}
+
+=cut
+
+sub put_failure {
+	my ($msg, $fatal) = @_;
+
+	if ($fatal) {
+		put_error($msg);
+	} else {
+		put_warning($msg);
+	}
+
+	return !$fatal;
 }
 
 1;
