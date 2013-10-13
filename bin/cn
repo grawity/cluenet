@@ -107,13 +107,26 @@ sub ldap_find_next_uid {
 	return $next_uid;
 }
 
-=head2 ldap_dn_exists($dn) -> $exists
+=head2 ldap_dn_comparable($dn) -> $exists
 
 Check if a LDAP entry with DN $dn exists.
 
 =cut
 
-sub ldap_dn_exists {
+sub ldap_dn_searchable {
+	my ($dn) = @_;
+
+	my $res = $ldap->search(base => $dn,
+				scope => "base",
+				filter => "objectClass=*",
+				attrs => ["1.1"]);
+
+	ldap_check($res, $dn, ignore => "LDAP_NO_SUCH_OBJECT", die => 1);
+
+	return !($res->is_error || $res->count == 0);
+}
+
+sub ldap_dn_comparable {
 	my ($dn) = @_;
 
 	my $dnparts = ldap_explode_dn($dn) // return 0;
@@ -142,7 +155,7 @@ sub krb_principal_exists {
 
 	my ($realm) = $principal =~ /@(.+)$/;
 
-	ldap_dn_exists("krbPrincipalName=$principal,cn=$realm,cn=kerberos,dc=cluenet,dc=org");
+	ldap_dn_comparable("krbPrincipalName=$principal,cn=$realm,cn=kerberos,dc=cluenet,dc=org");
 }
 
 =head2 ldap_whoami() -> $username
@@ -1097,7 +1110,7 @@ $commands{"user:create"} = sub {
 	my $dn = user_to_dn($username);
 	my $principal = "$username\@CLUENET.ORG";
 
-	if (ldap_dn_exists($dn)) {
+	if (ldap_dn_searchable($dn)) {
 		put_failure("Entry $dn already exists.", !$force)
 		|| return 1;
 		$skip_ldap = 1;
