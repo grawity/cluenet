@@ -3,6 +3,7 @@ use warnings;
 use strict;
 use base "Exporter";
 
+use Cluenet;
 use Carp;
 use IO::Handle;
 use Socket::GetAddrInfo qw(:constants getaddrinfo getnameinfo);
@@ -23,6 +24,7 @@ our @EXPORT = qw(
 	host_to_fqdn
 	file_read_line
 	gen_passwd
+	put_status
 );
 
 =head2 dns_match($domain, $subdomain) -> bool $matched
@@ -45,7 +47,8 @@ sub dns_match {
 
 =head2 dns_match_zone($domain, @zones) -> @zones
 
-Finds all zones that $domain belongs to, starting with most specific.
+Returns @zones filtered for those that $domain belongs to, and sorted starting
+with most specific.
 
 =cut
 
@@ -109,6 +112,7 @@ sub dns_canonical {
 		my ($err, $host) = getnameinfo($ai->{addr}, NI_NAMEREQD);
 		return $host unless length($err);
 	}
+
 	warn "Could not resolve rDNS for $name, fallback to cname\n";
 	return $ai[0]->{canonname};
 }
@@ -174,6 +178,18 @@ sub gen_passwd {
 	my $num = @chars;
 
 	return join "", map {$chars[int rand $num]} 1..$len;
+}
+
+=head2 put_status([$message])
+
+Display transient status which will be replaced or hidden after operation.
+
+=cut
+
+sub put_status {
+	if (ref $Cluenet::UI_CB{status} eq 'CODE') {
+		$Cluenet::UI_CB{status}->(@_);
+	}
 }
 
 1;

@@ -13,5 +13,9 @@ our $LDAP_BASE = $ENV{CN_LDAP_BASE} // "dc=cluenet,dc=org";
 our $KADM_HOST = $ENV{CN_KADM_HOST} // "krb5-admin.cluenet.org";
 our $API_PRINC = undef;
 our $API_KEYTAB = undef;
+our $UID_MIN = 25000;
+our $UID_MAX = 29999;
+
+our %UI_CB;
 
 1;

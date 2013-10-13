@@ -15,6 +15,7 @@ use constant ERR_SYNTAX => 2;
 
 use Cluenet::Common;
 use Cluenet::LDAP;
+use Cluenet::UI;
 use Data::Dumper;
 use Getopt::Long qw(:config posix_default no_ignore_case);
 use Net::DNS;
@@ -36,24 +37,8 @@ my %commands;
 
 use constant SHELL_SERVICES => qw(atd cron login passwd sshd su sudo);
 
-$ENV{LDAPURI} = "ldap://ldap.cluenet.org";
-$ENV{LDAPBASE} = "dc=cluenet,dc=org";
-
-### Status display
-
-sub status {
-	my $msg = shift;
-
-	if ($status) {
-		if (defined $msg) {
-			print STDERR "\r\033[K",
-				"\033[38;5;10m", $msg, "\033[m";
-		} else {
-			print STDERR "\r\033[K";
-		}
-		$|++;
-	}
-}
+$ENV{LDAPURI} = $Cluenet::LDAP_HOST;
+$ENV{LDAPBASE} = $Cluenet::LDAP_BASE;
 
 ### LDAP functions
 
@@ -71,7 +56,7 @@ sub ldap_dumpsearch {
 	my $raw = $args{-raw} // 0;
 	delete $args{-raw};
 
-	$ldap //= ldap_connect_any();
+	$ldap //= ldap_connect_best();
 	my $res = $ldap->search(%args);
 	ldap_check($res, $args{base}) or return;
 	if ($raw) {
@@ -126,7 +111,7 @@ sub ldap_check {
 		if ($args{ignore} && $res->error_name ~~ $args{ignore}) {
 			return 1;
 		} else {
-			status undef;
+			put_status();
 			my $msg = Cluenet::LDAP::ldap_format_error($res, $dn);
 			print STDERR "\e[33m${msg}\e[m";
 
@@ -198,7 +183,7 @@ sub format_address {
 	}
 }
 
-sub str_bool {
+sub parse_bool {
 	given (shift) {
 		return 1 if !defined $_;
 		return 1 if /^(1|y|yes|true)$/i;
@@ -207,8 +192,8 @@ sub str_bool {
 	}
 }
 
-sub ldap_bool {
-	return str_bool(shift) ? "TRUE" : "FALSE";
+sub ldap_fmt_bool {
+	return parse_bool(shift) ? "TRUE" : "FALSE";
 }
 
 # Output fields
@@ -256,7 +241,7 @@ sub krb5_have_tgt {
 
 sub krb5_ensure_tgt {
 	if (!krb5_have_tgt()) {
-		status undef;
+		put_status();
 		if (defined $ENV{CN_NUSH}) {
 			die "\e[1;31merror:\e[m not logged in\n";
 		} else {
@@ -266,21 +251,14 @@ sub krb5_ensure_tgt {
 }
 
 sub ldap_connect_auth {
-	krb5_ensure_tgt();
-	status "Connecting to LDAP server...";
-	my $r = Cluenet::LDAP::ldap_connect_auth;
-	status undef;
-	return $r;
+	Cluenet::LDAP::ldap_connect(auth => 1);
 }
 
 sub ldap_connect_anon {
-	status "Connecting to LDAP server...";
-	my $r = Cluenet::LDAP::ldap_connect_anon;
-	status undef;
-	return $r;
+	Cluenet::LDAP::ldap_connect(auth => 0);
 }
 
-sub ldap_connect_any {
+sub ldap_connect_best {
 	krb5_have_tgt() ? ldap_connect_auth : ldap_connect_anon;
 }
 
@@ -289,7 +267,7 @@ sub get_server_info {
 	my ($host) = @_;
 	my $dn = host_to_dn($host);
 	if (!exists $cache{$dn}) {
-		status "Looking up server: ".host_from_dn($dn);
+		put_status("Looking up server: ".host_from_dn($dn));
 		my $res = $ldap->search(base => $dn,
 					scope => "base",
 					filter => q(objectClass=server),
@@ -311,7 +289,7 @@ sub get_server_info {
 			$cache{$dn} = \%server;
 			last;
 		}
-		status undef;
+		put_status();
 	}
 	return $cache{$dn};
 }
@@ -382,7 +360,7 @@ sub get_user_info {
 	state %cache;
 	my ($dn) = @_;
 	if (!exists $cache{$dn}) {
-		status "Looking up user: ".user_from_dn($dn);
+		put_status("Looking up user: ".user_from_dn($dn));
 		my $res = $ldap->search(base => $dn,
 					scope => "base",
 					filter => q(objectClass=posixAccount),
@@ -398,7 +376,7 @@ sub get_user_info {
 			$cache{$dn} = \%user;
 			last;
 		}
-		status undef;
+		put_status();
 	}
 	return $cache{$dn};
 }
@@ -535,7 +513,7 @@ $commands{"access"} = sub {
 				} else {
 					$base = hostacl_to_dn($host, $service);
 				}
-				status "Searching in ACL: $host/$service";
+				put_status("Searching in ACL: $host/$service");
 				my $res = $ldap->search(base => $base,
 							scope => "sub",
 							filter => $filter,
@@ -543,17 +521,17 @@ $commands{"access"} = sub {
 				ldap_check($res, $base) or next;
 				push @results, $res->entries;
 			}
-			status undef;
+			put_status();
 		} else {
 			my $base = "ou=servers,dc=cluenet,dc=org";
-			status "Searching in all server ACLs...";
+			put_status("Searching in all server ACLs...");
 			my $res = $ldap->search(base => $base,
 						scope => "sub",
 						filter => $filter,
 						attrs => ["cn", "member"]);
 			ldap_check($res, $base) or next;
 			push @results, $res->entries;
-			status undef;
+			put_status();
 		}
 
 		my @output;
@@ -737,15 +715,15 @@ $commands{"server"} = sub {
 				my ($attr, $value) = @_;
 				if ($attr eq "active") {
 					$attr = "isActive";
-					$value = ldap_bool($value);
+					$value = ldap_fmt_bool($value);
 				}
 				elsif ($attr eq "official") {
 					$attr = "isOfficial";
-					$value = ldap_bool($value);
+					$value = ldap_fmt_bool($value);
 				}
 				elsif ($attr eq "public") {
 					$attr = "userAccessible";
-					$value = ldap_bool($value);
+					$value = ldap_fmt_bool($value);
 				}
 				elsif ($attr eq "admin" || $attr eq "owner") {
 					$value = user_to_dn_maybe($value);
@@ -757,7 +735,7 @@ $commands{"server"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_any;
+		$ldap = ldap_connect_best;
 		print_server_info($_) for @hosts;
 	}
 };
@@ -842,7 +820,7 @@ $commands{"server:admin"} = sub {
 		}
 	} else {
 		# list admins
-		$ldap = ldap_connect_any;
+		$ldap = ldap_connect_best;
 		for my $host (@hosts) {
 			my $dn = host_to_dn($host);
 			my $res = $ldap->search(base => $dn,
@@ -998,7 +976,7 @@ $commands{"user"} = sub {
 		ldap_exit;
 	}
 	else {
-		$ldap = ldap_connect_any;
+		$ldap = ldap_connect_best;
 		print_user_info(get_user_info($_))
 			for map {user_to_dn($_)} @users;
 	}

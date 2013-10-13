@@ -29,11 +29,13 @@ our @EXPORT = qw(
 	hostacl_to_dn
 	parse_changelist
 	parse_hostservice_safe
+	ldap_connect
 );
 
 =head2 user_to_dn($user) -> $dn
 
-Convert a Cluenet username to LDAP DN.
+Convert a Cluenet username to its LDAP DN. (Returns garbage if $user is already a
+DN or something else.)
 
 =cut
 
@@ -45,7 +47,7 @@ sub user_to_dn {
 
 =head2 user_to_dn_maybe($user) -> $dn
 
-Convert a Cluenet username to LDAP DN, if it isn't already.
+Convert a Cluenet username to its LDAP DN, if it isn't already.
 
 =cut
 
@@ -57,7 +59,7 @@ sub user_to_dn_maybe {
 
 =head2 host_to_dn($host) -> $dn
 
-Convert a Cluenet hostname to LDAP DN.
+Convert a Cluenet hostname to its LDAP DN.
 
 =cut
 
@@ -69,7 +71,7 @@ sub host_to_dn {
 
 =head2 hostacl_to_dn($host, $service) -> $dn
 
-Convert a Cluenet hostname and service name to Crispy-nssov LDAP DN.
+Convert a Cluenet hostname and service name to their Crispy-nssov LDAP DN.
 
 =cut
 
@@ -221,60 +223,73 @@ sub parse_changelist {
 	return \%changes;
 }
 
-=head2 __ldap_connect_auth(), __ldap_connect_anon() -> $ldaph
+=head2 _ldap_connect(%opt) -> $ldaph
 
 Establish an LDAP connection (GSSAPI-authenticated or anonymous).
 
+Options:
+	bool auth => 0
+
 =cut
 
-sub __ldap_connect_auth {
+sub _ldap_connect {
+	my %opt = @_;
+	my $res;
+
+	put_status("Connecting to LDAP server...");
+
 	my $ldaph = Net::LDAP->new($Cluenet::LDAP_HOST) or croak "$!";
 
-	my $peername = $ldaph->{net_ldap_socket}->peername;
-	my ($err, $host) = getnameinfo($peername);
-	if ($err) {
-		warn "Could not resolve canonical name of LDAP server: $err\n ";
-		$host = $ldaph->{net_ldap_host};
+	if ($opt{auth}) {
+		my $peername = $ldaph->{net_ldap_socket}->peername;
+
+		my ($err, $host) = getnameinfo($peername);
+		if ($err) {
+			warn "Could not resolve canonical name of LDAP server: $err\n ";
+			$host = $ldaph->{net_ldap_host};
+		}
+
+		my $sasl = Authen::SASL->new(mech => "GSSAPI");
+		my $saslclient = $sasl->client_new("ldap", $host);
+
+		$res = $ldaph->bind(sasl => $saslclient);
+		if ($res->code) { die "Error: ".$res->error; }
+	} else {
+		$res = $ldaph->bind();
+		if ($res->code) { die "Error: ".$res->error; }
 	}
 
-	my $sasl = Authen::SASL->new(mech => "GSSAPI");
-	my $saslclient = $sasl->client_new("ldap", $host);
-
-	my $msg = $ldaph->bind(sasl => $saslclient);
-	if ($msg->code) {
-		die "Error: ".$msg->error;
-	}
+	put_status();
 
 	return $ldaph;
 }
 
-sub __ldap_connect_anon {
-	my $ldaph = Net::LDAP->new($Cluenet::LDAP_HOST) or croak "$!";
-
-	my $msg = $ldaph->bind();
-	if ($msg->code) {
-		die "Error: ".$msg->error;
-	}
-
-	return $ldaph;
-}
-
-=head2 ldap_connect_auth(), ldap_connect_anon() -> $ldaph
+=head2 ldap_connect(%opt) -> $ldaph
 
 Return a singleton handle to the LDAP connection.
 
 =cut
 
-sub ldap_connect_auth {
-	our $LDAP_CONN_AUTH;
+sub ldap_connect {
+	my %opt = @_;
+	state $conn_auth;
+	state $conn_anon;
 
-	return $LDAP_CONN_AUTH //= __ldap_connect_auth;
-}
-
-sub ldap_connect_anon {
-	our ($LDAP_CONN_AUTH, $LDAP_CONN_ANON);
-
-	return $LDAP_CONN_ANON //= ($LDAP_CONN_AUTH // __ldap_connect_anon);
+	if ($conn_auth) {
+		return $conn_auth;
+	} elsif ($opt{auth}) {
+		$conn_auth = _ldap_connect(%opt);
+		if ($conn_anon) {
+			$conn_anon->unbind;
+		}
+		$conn_anon = $conn_auth;
+		return $conn_auth;
+	} elsif ($conn_anon) {
+		return $conn_anon;
+	} else {
+		$conn_anon = _ldap_connect(%opt);
+		return $conn_anon;
+	}
 }
 
 =head2 ldap_format_error($msg, $dn?) -> $text

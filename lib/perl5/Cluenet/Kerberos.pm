@@ -39,8 +39,6 @@ krb_init_context;
 package Authen::Krb5::Principal;
 use overload q[""] => \&unparse;
 
-use Carp;
-
 sub new {
 	my ($class, $princ) = @_;
 
@@ -58,8 +56,6 @@ sub unparse {
 
 
 =fooooo
-
-our $krb5_ctx = Authen::Krb5::init_context;
 
 sub krb5_kuserok {
 	my ($authzid, $princ) = @_;
@@ -104,16 +100,6 @@ sub krb5_checkpass {
 	my ($server, $user, $pass) = @_;
 	my $krb = Authen::Krb5::Simple->new;
 	return $krb->authenticate($user, $pass);
-}
-
-sub krb5_have_tgt {
-	system("klist", "-s", "-5") == 0;
-}
-
-sub krb5_ensure_tgt {
-	if (!krb5_have_tgt()) {
-		die "Kerberos 5 ticket needed. Please run 'kinit'.\n";
-	}
 }
 
 sub new_ccache {
