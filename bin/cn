@@ -1091,6 +1091,8 @@ $commands{"user:dump"} = sub {
 };
 
 $commands{"user:create"} = sub {
+	require Cluenet::Kadmin;
+
 	my ($force, $uid);
 	my ($res, %entry);
 	my ($skip_krb, $skip_ldap);
@@ -1170,9 +1172,9 @@ $commands{"user:create"} = sub {
 	my $password = gen_passwd();
 
 	put_status("Connecting to kadmin server...");
-	my $kadm = Cluenet::Kadmin::kadm_connect_auth;
+	my $kadm = Cluenet::Kadmin::kadm_connect_auth();
 	put_status("Creating Kerberos principal...");
-	Cluenet::Kadmin::kadm_create_principal($kadm, $principal, $pass);
+	Cluenet::Kadmin::kadm_create_principal($kadm, $principal, $password);
 	put_status();
 	print "+ principal: $principal\n";
 
