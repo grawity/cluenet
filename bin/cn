@@ -1163,24 +1163,32 @@ $commands{"user:create"} = sub {
 		authorizedService => ["wiki"],
 	);
 
-	print "+ $dn\n";
-	$res = $ldap->add($dn, attr => [%entry]);
-	ldap_check($res, $dn);
+	if ($skip_ldap) {
+		print "- $dn (skipped)\n";
+	} else {
+		print "+ $dn\n";
+		$res = $ldap->add($dn, attr => [%entry]);
+		ldap_check($res, $dn);
+	}
 
 	# Add Kerberos principal
 
 	my $password = gen_passwd();
 
-	put_status("Connecting to kadmin server...");
-	my $kadm = Cluenet::Kadmin::kadm_connect_auth();
-	put_status("Creating Kerberos principal...");
-	Cluenet::Kadmin::kadm_create_principal($kadm, $principal, $password);
-	put_status();
-	print "+ principal: $principal\n";
+	if ($skip_krb) {
+		print "- principal: $principal (skipped)\n";
+	} else {
+		put_status("Connecting to kadmin server...");
+		my $kadm = Cluenet::Kadmin::kadm_connect_auth();
+		put_status("Creating Kerberos principal...");
+		Cluenet::Kadmin::kadm_create_principal($kadm, $principal, $password);
+		put_status();
+		print "+ principal: $principal\n";
+	}
 
-	print "Created:\n";
-	print "- username: $username\n";
-	print "- password: $password\n";
+	print "User account created.\n";
+	print "; username: $username\n";
+	print "; password: $password\n";
 
 	return 0;
 };
