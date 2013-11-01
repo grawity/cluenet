@@ -25,7 +25,7 @@ sub kadm_get_config {
 	if (!defined $config) {
 		$config = Authen::Krb5::Admin::Config->new;
 		$config->realm("CLUENET.ORG");
-		$config->admin_server(Cluenet::KADM_HOST);
+		$config->admin_server($Cluenet::KADM_HOST);
 	}
 	return $config;
 }
@@ -60,8 +60,8 @@ Connect to Cluenet's kadmin server using configured API principal & keytab.
 sub kadm_connect_mgmt {
 	my $config = kadm_get_config;
 	my $kadm = Authen::Krb5::Admin->init_with_skey(
-			Cluenet::API_PRINC,
-			Cluenet::API_KEYTAB,
+			$Cluenet::API_PRINC,
+			$Cluenet::API_KEYTAB,
 			KADM5_ADMIN_SERVICE,
 			$config);
 	$kadm || croak Authen::Krb5::Admin::error;
