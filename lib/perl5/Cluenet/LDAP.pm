@@ -32,6 +32,23 @@ our @EXPORT = qw(
 	ldap_connect
 );
 
+my %domain_aliases = (
+	"cluenet"   => "cluenet.org",
+	"nullroute" => "nullroute.eu.org",
+);
+
+=head2 domain_to_base_dn($domain) -> $dn
+
+Convert a domain to a DN consisting of series of 'dc=' components.
+
+=cut
+
+sub domain_to_base_dn {
+	my $domain = shift;
+
+	return join(",", map {"dc=$_"} split(".", $domain));
+}
+
 =head2 user_to_dn($user) -> $dn
 
 Convert a Cluenet username to its LDAP DN. (Returns garbage if $user is already a
@@ -41,8 +58,15 @@ DN or something else.)
 
 sub user_to_dn {
 	my $user = shift;
+	my $domain = "cluenet.org";
 
-	return "uid=${user},ou=people,dc=cluenet,dc=org";
+	if ($user =~ /^(.+)\@(.+)$/) {
+		($user, $domain) = ($1, $domain_aliases{$2} // $2);
+	}
+
+	my $base = join(",", map {"dc=$_"} split(/\./, $domain));
+
+	return "uid=${user},ou=people,${base}";
 }
 
 =head2 user_to_dn_maybe($user) -> $dn
